@@ -1,0 +1,50 @@
+[project]
+name = "imeto"
+version = "0.1.0"
+description = "Provenance-anchored, human-gated claim extraction pipeline"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9",
+    "pydantic-settings>=2.0",
+    "sqlmodel>=0.0.22",
+    "openai>=1.30",
+    "httpx>=0.27",
+    "pdfplumber>=0.11",
+    "python-docx>=1.1",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+ui = ["gradio>=4.0"]
+api = ["fastapi>=0.115", "uvicorn>=0.30"]
+mcp = ["mcp>=1.2"]
+postgres = ["psycopg>=3.2", "alembic>=1.13"]
+embed = ["sentence-transformers>=3.0"]
+dev = ["pytest>=8.0", "respx>=0.21", "ruff>=0.6", "mypy>=1.11"]
+
+[project.scripts]
+imeto = "imeto.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"imeto/cli.py" = ["B008"]  # typer.Argument w defaults to idiom Typera
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["pdfplumber", "docx"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
