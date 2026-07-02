@@ -14,17 +14,25 @@ from imeto.core.llm import LLMClient
 from imeto.core.provenance import ProvenanceStore
 from imeto.phases.base import PhaseContext
 from imeto.phases.extract import ExtractPhase
+from imeto.registries.skills import SkillRegistry
+from imeto.worktypes import WorkType
 
 
 def extract_candidates(
-    store: ProvenanceStore, document: str, llm: LLMClient
+    store: ProvenanceStore,
+    skills: SkillRegistry,
+    document: str,
+    work_type: WorkType,
+    llm: LLMClient,
 ) -> list[tuple[int, str]]:
-    """Uruchamia ekstrakcję i zwraca listę (id_dowodu, etykieta) kandydatów."""
-    result = ExtractPhase(Path(document)).run(PhaseContext(store=store, llm=llm))
+    """Uruchamia ekstrakcję i zwraca listę (id_faktu, etykieta) kandydatów."""
+    ctx = PhaseContext(store=store, llm=llm, skills=skills)
+    result = ExtractPhase(Path(document), work_type).run(ctx)
     out: list[tuple[int, str]] = []
-    for eid in result.produced:
-        ev = store.get_evidence(eid)
-        out.append((eid, f"{ev.statement} — „{ev.quote}”"))
+    for cid in result.produced:
+        claim = store.get_claim(cid)
+        grounds = " | ".join(f"„{ev.quote}”" for ev in store.evidence_for_claim(cid))
+        out.append((cid, f"({claim.kind}) {claim.statement} — {grounds}"))
     return out
 
 
@@ -34,13 +42,13 @@ def apply_decisions(
     accepted_ids: list[int],
     by: str = "operator",
 ) -> tuple[int, int]:
-    """Akceptuje zaznaczone, odrzuca resztę. Zwraca (zaakceptowane, odrzucone)."""
+    """Akceptuje zaznaczone fakty, odrzuca resztę. Zwraca (zaakceptowane, odrzucone)."""
     accepted = set(accepted_ids)
-    for eid in all_ids:
-        if eid in accepted:
-            store.accept_evidence(eid, by=by)
+    for cid in all_ids:
+        if cid in accepted:
+            store.accept_claim(cid, by=by)
         else:
-            store.reject_evidence(eid, by=by)
+            store.reject_claim(cid, by=by)
     return len(accepted), len(all_ids) - len(accepted)
 
 
@@ -48,8 +56,9 @@ def build_ui() -> Any:
     import gradio as gr
 
     store = ProvenanceStore(settings.db_url)
+    skills = SkillRegistry(settings.knowledge_dir)
 
-    def on_extract(document: str | None, base_url: str, model: str):  # type: ignore[no-untyped-def]
+    def on_extract(document: str | None, work_type: str, base_url: str, model: str):  # type: ignore[no-untyped-def]
         if not document:
             return gr.update(choices=[], value=[]), [], "Wgraj dokument."
         if not model:
@@ -61,7 +70,7 @@ def build_ui() -> Any:
             temperature=settings.llm_temperature,
             json_mode=settings.llm_json_mode,
         )
-        cands = extract_candidates(store, document, llm)
+        cands = extract_candidates(store, skills, document, WorkType(work_type), llm)
         choices = [(label, eid) for eid, label in cands]
         ids = [eid for eid, _ in cands]
         msg = f"Wydobyto {len(ids)} kandydatów."
@@ -76,7 +85,13 @@ def build_ui() -> Any:
         with gr.Row():
             base_url = gr.Textbox(label="Adres modelu", value=settings.llm_base_url)
             model = gr.Textbox(label="Model", value=settings.llm_model)
-        document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
+        with gr.Row():
+            document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
+            work_type = gr.Dropdown(
+                label="Typ wytworu",
+                choices=[wt.value for wt in WorkType],
+                value=WorkType.report.value,
+            )
         extract_btn = gr.Button("Wydobądź fakty", variant="primary")
         candidates = gr.CheckboxGroup(label="Kandydaci (zaznacz)", choices=[])
         decide_btn = gr.Button("Zatwierdź zaznaczone / odrzuć resztę")
@@ -84,7 +99,9 @@ def build_ui() -> Any:
         all_ids = gr.State([])
 
         extract_btn.click(
-            on_extract, [document, base_url, model], [candidates, all_ids, status]
+            on_extract,
+            [document, work_type, base_url, model],
+            [candidates, all_ids, status],
         )
         decide_btn.click(on_decide, [candidates, all_ids], [status])
     return ui

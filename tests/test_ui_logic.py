@@ -2,9 +2,11 @@ from pathlib import Path
 
 from docx import Document
 
-from imeto.core.provenance import ProvenanceStore
+from imeto.core.provenance import ProvenanceStore, Source
 from imeto.core.schemas import ExtractedFact, Extraction
+from imeto.registries.skills import SkillRegistry
 from imeto.ui.app import apply_decisions, extract_candidates
+from imeto.worktypes import WorkType
 
 
 class FakeLLM:
@@ -26,33 +28,50 @@ def _make_docx(path: Path) -> Path:
     return path
 
 
+def _skills(tmp_path: Path) -> SkillRegistry:
+    d = tmp_path / "knowledge" / "extraction"
+    d.mkdir(parents=True)
+    (d / "report.md").write_text("skill testowy", encoding="utf-8")
+    return SkillRegistry(tmp_path / "knowledge")
+
+
 def test_extract_candidates_returns_labeled_ids(tmp_path: Path):
     doc = _make_docx(tmp_path / "s.docx")
     store = ProvenanceStore()
     ex = Extraction(
         facts=[
-            ExtractedFact(quote="uchwałę nr 12", statement="Rada przyjęła."),
-            ExtractedFact(quote="w sprawie budżetu", statement="Dot. budżetu."),
+            ExtractedFact(
+                statement="Rada przyjęła.", kind="direct", quotes=["uchwałę nr 12"]
+            ),
+            ExtractedFact(
+                statement="Dotyczyło budżetu.",
+                kind="inferred",
+                quotes=["w sprawie budżetu"],
+            ),
         ]
     )
-    cands = extract_candidates(store, str(doc), FakeLLM(ex))  # type: ignore[arg-type]
+    cands = extract_candidates(
+        store, _skills(tmp_path), str(doc), WorkType.report, FakeLLM(ex)  # type: ignore[arg-type]
+    )
     assert len(cands) == 2
-    assert all(isinstance(eid, int) for eid, _ in cands)
-    assert "Rada przyjęła." in cands[0][1]
+    assert all(isinstance(cid, int) for cid, _ in cands)
+    labels = " ".join(label for _, label in cands)
+    assert "(direct)" in labels and "(inferred)" in labels
+    assert "uchwałę nr 12" in labels
 
 
 def test_apply_decisions_accepts_selected_rejects_rest():
-    from imeto.core.provenance import Source
-
     store = ProvenanceStore()
     src = Source(local_identifier="d", full_text="uchwałę nr 12 i tekst")
     sid = store.add_source(src)
-    e1 = store.add_evidence(sid, ExtractedFact(quote="uchwałę nr 12", statement="a"))
-    e2 = store.add_evidence(sid, ExtractedFact(quote="tekst", statement="b"))
+    e1 = store.add_evidence(sid, "uchwałę nr 12")
+    e2 = store.add_evidence(sid, "tekst")
+    c1 = store.add_claim(sid, "a", "direct", [e1])
+    c2 = store.add_claim(sid, "b", "direct", [e2])
 
-    acc, rej = apply_decisions(store, [e1, e2], [e1])
+    acc, rej = apply_decisions(store, [c1, c2], [c1])
 
     assert (acc, rej) == (1, 1)
-    assert store.get_evidence(e1).status == "accepted"
-    assert store.get_evidence(e2).status == "rejected"
-    assert store.get_evidence(e1).approved_by == "operator"
+    assert store.get_claim(c1).status == "accepted"
+    assert store.get_claim(c2).status == "rejected"
+    assert store.get_claim(c1).approved_by == "operator"

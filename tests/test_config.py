@@ -4,7 +4,7 @@ from imeto.config import Settings
 
 
 def test_defaults_load():
-    s = Settings()
+    s = Settings(_env_file=None)  # hermetycznie: ignoruj lokalny .env
     assert s.db_url.startswith("sqlite")
     assert s.llm_temperature == 0.2
     assert s.llm_model == ""  # nie wymagany przy imporcie

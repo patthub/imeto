@@ -56,11 +56,13 @@ def test_retries_on_invalid_then_succeeds():
     route = respx.post(URL).mock(
         side_effect=[
             _completion("to nie jest json"),
-            _completion('{"facts": [{"quote": "a", "statement": "b"}]}'),
+            _completion(
+                '{"facts": [{"statement": "b", "kind": "direct", "quotes": ["a"]}]}'
+            ),
         ]
     )
     result = make_client().structured("sys", "usr", Extraction)
-    assert result.facts[0].quote == "a"
+    assert result.facts[0].quotes == ["a"]
     assert route.call_count == 2  # jedna korekta, potem sukces
 
 

@@ -1,8 +1,12 @@
-"""Faza ekstrakcji (POC-1): dokument → fakty poparte dosłownym cytatem.
+"""Faza ekstrakcji: dokument → fakty (direct/inferred) z dosłownie zakotwiczonymi
+gruntami.
 
-Pierwszy pełny przepływ: parsing → LLM → weryfikacja spanu → provenance. Fakty,
-których cytat nie ma pokrycia w źródle, są ODRZUCANE (SpanNotVerified) i nie trafiają
-do bazy — to egzekucja niezmiennika anty-halucynacji na poziomie fazy."""
+Realizuje ustaloną zasadę:
+- każdy grunt (cytat) weryfikowany dosłownie przez `add_evidence`,
+- fakt bez ani jednego zweryfikowanego gruntu = halucynacja → ODRZUCANY (nie zapisany),
+- fakt z >=1 gruntem zapisywany jako `Claim` z zachowanym `kind` (direct/inferred);
+  brakujące grunty są zliczane (fakt „częściowy" — do uwagi człowieka),
+- rodzaj faktu (wprost vs wywnioskowany) nigdy nie jest zlewany."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,44 +15,75 @@ from imeto.core.provenance import Source, SpanNotVerified
 from imeto.core.schemas import Extraction
 from imeto.ingest.parsing import parse_document
 from imeto.phases.base import PhaseContext, PhaseResult
+from imeto.worktypes import FABIO, WorkType
 
 EXTRACT_SYSTEM = (
-    "Jesteś asystentem wydobywającym fakty ze sprawozdań. Zwróć wyłącznie JSON w "
-    'formacie: {"facts": [{"quote": "...", "statement": "..."}]}\n'
-    "- quote MUSI być dosłownym fragmentem tekstu, skopiowanym znak w znak.\n"
-    "- statement to fakt, który ten cytat popiera (własnymi słowami, zwięźle).\n"
-    "- Nie zmyślaj cytatów. Jeśli fragmentu nie ma w tekście, nie dodawaj go.\n"
-    "- Jeśli nie znajdziesz żadnych faktów, zwróć {\"facts\": []}."
+    "Jesteś asystentem wydobywającym fakty z wytworów naukowych. Zwróć tylko JSON:\n"
+    '{"facts": [{"statement": "...", "kind": "direct|inferred", '
+    '"quotes": ["...", "..."]}]}\n'
+    "- statement: fakt własnymi słowami, zwięźle.\n"
+    '- kind: "direct" gdy fakt jest napisany w tekście wprost; '
+    '"inferred" gdy go wywnioskowałeś z tekstu.\n'
+    "- quotes: dosłowne fragmenty ŹRÓDŁA (skopiowane znak w znak), na których "
+    'fakt się opiera. Dla "direct" to poparcie; dla "inferred" to PRZESŁANKI.\n'
+    "- Każdy fakt MUSI mieć co najmniej jeden cytat. Nie zmyślaj cytatów: "
+    "jeśli fragmentu nie ma w tekście, nie używaj go.\n"
+    '- Jeśli nie znajdziesz faktów, zwróć {"facts": []}.'
 )
 
 
 @dataclass
 class ExtractPhase:
     document: Path
+    work_type: WorkType
     name: str = field(default="extract")
 
     def run(self, ctx: PhaseContext) -> PhaseResult:
         text = parse_document(self.document)
         source_id = ctx.store.add_source(
-            Source(local_identifier=str(self.document), full_text=text)
+            Source(
+                local_identifier=str(self.document),
+                full_text=text,
+                fabio_type=FABIO[self.work_type],
+            )
         )
-        extraction = ctx.llm.structured(EXTRACT_SYSTEM, text, Extraction)
+        # baza (uniwersalne niezmienniki) + skill typu wytworu (co jest faktem)
+        skill = ctx.skills.load(self.work_type.value)
+        system = f"{EXTRACT_SYSTEM}\n\n{skill}"
+        extraction = ctx.llm.structured(system, text, Extraction)
 
         activity = f"extract:{source_id}"
+        agent = ctx.llm.model
         produced: list[int] = []
-        rejected = 0
+        ungrounded = 0  # fakty bez żadnego zweryfikowanego gruntu (odrzucone)
+        partial = 0  # fakty z częścią gruntów niezweryfikowanych (do uwagi człowieka)
+
         for fact in extraction.facts:
-            try:
-                eid = ctx.store.add_evidence(
-                    source_id, fact, activity=activity, agent=ctx.llm.model
-                )
-                produced.append(eid)
-            except SpanNotVerified:
-                rejected += 1  # cytat bez pokrycia — halucynacja, pomijamy
+            ev_ids: list[int] = []
+            failed = 0
+            for quote in fact.quotes:
+                try:
+                    ev_ids.append(
+                        ctx.store.add_evidence(
+                            source_id, quote, activity=activity, agent=agent
+                        )
+                    )
+                except SpanNotVerified:
+                    failed += 1
+            if not ev_ids:
+                ungrounded += 1  # brak pokrycia w całości — halucynacja, pomijamy
+                continue
+            if failed:
+                partial += 1
+            claim_id = ctx.store.add_claim(
+                source_id, fact.statement, fact.kind, ev_ids,
+                activity=activity, agent=agent,
+            )
+            produced.append(claim_id)
 
         summary = (
-            f"źródło {source_id}: {len(produced)} kandydatów zapisanych, "
-            f"{rejected} odrzuconych (cytat bez pokrycia w źródle)"
+            f"źródło {source_id}: {len(produced)} faktów zapisanych "
+            f"({partial} częściowych), {ungrounded} odrzuconych (bez pokrycia)"
         )
         return PhaseResult(
             ok=True, summary=summary, produced=produced, needs_human=True

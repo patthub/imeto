@@ -6,13 +6,15 @@ from typing import Protocol
 
 from imeto.core.llm import LLMClient
 from imeto.core.provenance import ProvenanceStore
+from imeto.registries.skills import SkillRegistry
 
 
 @dataclass
 class PhaseContext:
     store: ProvenanceStore
     llm: LLMClient
-    # ponytail: tools/skills/dossier_id dołożyć, gdy powstaną rejestry (krok 10) —
+    skills: SkillRegistry
+    # ponytail: tools/dossier_id dołożyć, gdy powstaną (ToolRegistry, maszyna stanów) —
     #           teraz byłyby martwymi polami.
 
 

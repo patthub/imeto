@@ -1,50 +1,41 @@
 import pytest
 
 from imeto.core.provenance import ProvenanceStore, Source
-from imeto.core.schemas import ExtractedFact
 
 SRC = "Rada gminy przyjęła uchwałę nr 12 w sprawie budżetu."
 
 
-def _store_with_candidate() -> tuple[ProvenanceStore, int, int]:
+def _store_with_claim() -> tuple[ProvenanceStore, int, int]:
     store = ProvenanceStore()
     sid = store.add_source(Source(local_identifier="d", full_text=SRC))
-    eid = store.add_evidence(sid, ExtractedFact(quote="uchwałę nr 12", statement="x"))
-    return store, sid, eid
+    e = store.add_evidence(sid, "uchwałę nr 12")
+    cid = store.add_claim(sid, "Rada przyjęła.", "direct", [e])
+    return store, sid, cid
 
 
-def test_new_evidence_is_candidate():
-    store, sid, _ = _store_with_candidate()
-    (ev,) = store.evidence_for_source(sid)
-    assert ev.status == "candidate"
-    assert ev.decided_at is None
+def test_new_claim_is_candidate():
+    store, _, cid = _store_with_claim()
+    claim = store.get_claim(cid)
+    assert claim.status == "candidate"
+    assert claim.decided_at is None
 
 
 def test_accept_sets_status_and_author():
-    store, sid, eid = _store_with_candidate()
-    store.accept_evidence(eid, by="operator")
-    ev = store.get_evidence(eid)
-    assert ev.status == "accepted"
-    assert ev.approved_by == "operator"
-    assert ev.decided_at is not None
+    store, _, cid = _store_with_claim()
+    store.accept_claim(cid, by="operator")
+    claim = store.get_claim(cid)
+    assert claim.status == "accepted"
+    assert claim.approved_by == "operator"
+    assert claim.decided_at is not None
 
 
 def test_reject_sets_status():
-    store, sid, eid = _store_with_candidate()
-    store.reject_evidence(eid, by="operator")
-    assert store.get_evidence(eid).status == "rejected"
-
-
-def test_filter_by_status():
-    store, sid, eid = _store_with_candidate()
-    store.add_evidence(sid, ExtractedFact(quote="w sprawie budżetu", statement="y"))
-    store.accept_evidence(eid)
-    assert len(store.evidence_for_source(sid, status="accepted")) == 1
-    assert len(store.evidence_for_source(sid, status="candidate")) == 1
-    assert len(store.evidence_for_source(sid)) == 2
+    store, _, cid = _store_with_claim()
+    store.reject_claim(cid, by="operator")
+    assert store.get_claim(cid).status == "rejected"
 
 
 def test_decide_unknown_raises():
-    store, _, _ = _store_with_candidate()
+    store, _, _ = _store_with_claim()
     with pytest.raises(ValueError):
-        store.accept_evidence(999)
+        store.accept_claim(999)

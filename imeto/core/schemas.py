@@ -1,19 +1,28 @@
 """Structured output LLM-a (ADR-003). Twardy kontrakt formatu: model zwraca
-wyłącznie te pola. `quote` jest weryfikowany osobno przez `core.span`; offsetów
-model NIE podaje — liczymy je sami, nie ufamy modelowi."""
+wyłącznie te pola. Cytaty (`quotes`) są weryfikowane osobno przez `core.span`;
+offsetów model NIE podaje — liczymy je sami.
 
-from typing import Annotated
+Zasada „łańcucha dowodów": każdy fakt musi wskazać dosłowne fragmenty źródła,
+na których się opiera (>=1). Rodzaj faktu (`kind`) rozdziela to, co napisane
+wprost, od tego, co wywnioskowane — te dwa nigdy się nie zlewają."""
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+# direct   — fakt napisany w źródle wprost; `quotes` to jego dosłowne poparcie.
+# inferred — fakt wywnioskowany; `quotes` to PRZESŁANKI, na których wniosek się opiera.
+FactKind = Literal["direct", "inferred"]
 
 
 class ExtractedFact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    quote: NonBlank  # dosłowny fragment źródła (do weryfikacji spanu)
-    statement: NonBlank  # fakt, który cytat popiera
+    statement: NonBlank  # fakt (własnymi słowami)
+    kind: FactKind
+    quotes: list[NonBlank] = Field(min_length=1)  # dosłowne grunty/przesłanki
 
 
 class Extraction(BaseModel):

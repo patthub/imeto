@@ -19,7 +19,13 @@ class FakeLLMClient:
         self, system: str, user: str, schema: type[Extraction]
     ) -> Extraction:
         return Extraction(
-            facts=[ExtractedFact(quote="przyjęła uchwałę nr 12", statement="Rada.")]
+            facts=[
+                ExtractedFact(
+                    statement="Rada przyjęła.",
+                    kind="direct",
+                    quotes=["przyjęła uchwałę nr 12"],
+                )
+            ]
         )
 
 
@@ -35,10 +41,11 @@ def test_run_extracts_and_prints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(settings, "db_url", "sqlite://")  # in-memory, bez pliku
     monkeypatch.setattr("imeto.cli.LLMClient", FakeLLMClient)
 
-    result = runner.invoke(app, ["run", str(doc)])
+    result = runner.invoke(app, ["run", str(doc), "--type", "report"])
 
     assert result.exit_code == 0
-    assert "1 kandydatów zapisanych" in result.stdout
+    assert "1 faktów zapisanych" in result.stdout
+    assert "(direct)" in result.stdout
     assert "uchwałę nr 12" in result.stdout
 
 

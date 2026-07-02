@@ -209,11 +209,11 @@ zapisałem, tyle odrzuciłem, teraz potrzebna decyzja człowieka".
 
 **Technicznie:** definiujemy kontrakt fazy (`Phase`, `PhaseContext`, `PhaseResult` w
 `phases/base.py`) i pierwszą jego realizację — `ExtractPhase`. Przepływ: `parse_document`
-→ zapis źródła → `llm.structured(...)` z instrukcją wydobycia faktów → dla każdego faktu
-`store.add_evidence` (który weryfikuje cytat); wyjątek `SpanNotVerified` jest łapany i
-liczony jako odrzucony. Wynik (`PhaseResult`) niesie listę zapisanych dowodów i flagę
-`needs_human=True` (kandydaci czekają na próg). Faza jest w pełni testowalna z atrapą
-modelu i tymczasową bazą.
+→ zapis źródła → `llm.structured(...)` z instrukcją wydobycia faktów → weryfikacja gruntów i
+zapis faktów. Faza jest w pełni testowalna z atrapą modelu i tymczasową bazą. **Uwaga:**
+sam model faktu (rozdzielenie faktu od jego cytatów, rodzaje direct/inferred) rozwinęliśmy
+później — patrz [Krok 11](#krok-11) oraz [rozdział 5](#5-jak-wyciagane-sa-fakty), który
+opisuje aktualny przepływ w całości.
 
 ### Krok 8 — Uruchomienie z wiersza poleceń (`imeto/cli.py`)
 
@@ -235,13 +235,13 @@ go **akceptuje** albo **odrzuca**. System zapamiętuje nie tylko decyzję, ale i
 oraz moment — żeby zawsze było wiadomo, kto co zatwierdził. To realizacja zasady „człowiek
 decyduje".
 
-**Technicznie:** dowód (`Evidence`) dostaje pola `status` (candidate / accepted /
-rejected), `approved_by` (kto zdecydował) i `decided_at` (kiedy). Store zyskuje metody
-`accept_evidence` i `reject_evidence` oraz filtrowanie dowodów po statusie. W języku
-standardu PROV-O akceptacja to przypisanie do osoby (`wasAttributedTo`), a odrzucenie —
-unieważnienie (`wasInvalidatedBy`). Uwaga: pełny „dyrygent" wielu faz (sekwencer) świadomie
-odłożyliśmy — przy jednej fazie byłby przedwczesny; wejdzie przy POC-2, gdy faz będzie
-więcej.
+**Technicznie:** decyzja dotyczy **faktu** (`Claim`), nie pojedynczego cytatu — fakt
+dostaje pola `status` (candidate / accepted / rejected), `approved_by` (kto zdecydował) i
+`decided_at` (kiedy). Store ma metody `accept_claim` / `reject_claim` oraz filtrowanie
+faktów po statusie. W języku standardu PROV-O akceptacja to przypisanie do osoby
+(`wasAttributedTo`), a odrzucenie — unieważnienie (`wasInvalidatedBy`). Uwaga: pełny
+„dyrygent" wielu faz (sekwencer) świadomie odłożyliśmy — przy jednej fazie byłby
+przedwczesny; wejdzie, gdy faz będzie więcej.
 
 ### Krok 10 — Interfejs graficzny (`imeto/ui/app.py`)
 
@@ -257,6 +257,27 @@ ekstrakcji, zastosowanie decyzji) jest w osobnych, **testowalnych** funkcjach
 Samą bibliotekę Gradio wczytujemy dopiero przy uruchomieniu interfejsu, więc nie obciąża
 reszty programu ani testów. Adres i nazwę modelu można podać wprost w interfejsie.
 
+### Krok 11 — Typowane fakty: „wprost" vs „wywnioskowany" (fundament POC-2)
+<a id="krok-11"></a>
+
+**Prosto:** do tej pory każdy fakt był traktowany tak samo. Ale w prawdziwych tekstach
+fakt bywa albo **napisany wprost** („przeszkolono 128 osób"), albo **wywnioskowany** przez
+model z kilku zdań („skoro były 3 konferencje po 100 osób, to dotarto do ok. 300 osób").
+To dwie zupełnie różne rzeczy i **nigdy nie wolno ich mylić** — bo wniosek, choć brzmi
+wiarygodnie, jest tylko rozumowaniem modelu, nie cytatem. Dlatego każdy fakt dostaje
+etykietę rodzaju, a jego „grunty" (fragmenty źródła, na których się opiera) są nadal
+weryfikowane co do znaku. Fakt może opierać się na **wielu** cytatach — również z różnych
+miejsc dokumentu (fakt rozproszony).
+
+**Technicznie:** rozdzieliliśmy dawny pojedynczy `Evidence` (cytat+treść) na trzy encje:
+`Claim` (fakt: `statement` + `kind` „direct"/„inferred" + próg człowieka), `Evidence`
+(czysta dosłowna kotwica: cytat + pozycja) oraz `ClaimEvidence` (powiązanie **wiele-do-
+wielu**: fakt `prov:wasDerivedFrom` swoje grunty). Model zwraca teraz dla każdego faktu:
+treść, rodzaj i **listę dosłownych cytatów-gruntów** („łańcuch dowodów"). Reguła zapisu:
+fakt bez ani jednego zweryfikowanego gruntu = halucynacja → odrzucony; fakt z częścią
+gruntów niezweryfikowanych → zapisany, ale oznaczony jako „częściowy" do sprawdzenia. Pełny
+przebieg opisuje [rozdział 5](#5-jak-wyciagane-sa-fakty).
+
 ---
 
 ## 5. Jak dokładnie wyciągane są fakty — krok po kroku
@@ -270,7 +291,8 @@ końcu **konkretny przykład** pokazujący, jak prawdziwy cytat przechodzi, a zm
 
 ```
 dokument → [1] tekst → [2] zapis źródła → [3] pytanie do modelu → [4] sprawdzenie formy
-        → [5] weryfikacja każdego cytatu → [6] zapis kandydatów → [7] decyzja człowieka
+        → [5] weryfikacja każdego cytatu-gruntu → [6] zapis faktów (direct/inferred)
+        → [7] decyzja człowieka
 ```
 
 Cała ta sekwencja to jedno „naciśnięcie guzika": polecenie `imeto run <dokument>` albo
@@ -296,17 +318,23 @@ zawsze będzie wiadomo, z którego dokładnie dokumentu pochodzi.
 Do modelu wysyłamy dwie rzeczy:
 
 - **Instrukcję** (stały tekst `EXTRACT_SYSTEM`): „wydobądź fakty; zwróć wyłącznie JSON w
-  formacie `{"facts": [{"quote": "...", "statement": "..."}]}`; **quote musi być dosłownym
-  fragmentem tekstu, skopiowanym znak w znak**; nie zmyślaj cytatów; jeśli nie ma faktów,
-  zwróć pustą listę".
+  formacie `{"facts": [{"statement": "...", "kind": "direct|inferred", "quotes": ["..."]}]}`;
+  cytaty muszą być dosłownymi fragmentami tekstu, skopiowanymi znak w znak; każdy fakt musi
+  mieć co najmniej jeden cytat; nie zmyślaj cytatów; jeśli nie ma faktów, zwróć pustą listę".
 - **Treść dokumentu** (`full_text`) jako materiał do przeczytania.
 
-Model ma zwrócić listę faktów, gdzie **`quote`** to dosłowny fragment ze źródła (dowód), a
-**`statement`** to ten sam fakt ujęty własnymi słowami (streszczenie). Rozdzielenie tych
-dwóch jest celowe: `quote` służy do weryfikacji, `statement` do czytania przez człowieka.
+Model ma zwrócić listę faktów, gdzie każdy fakt ma trzy elementy:
 
-Ważne, czego tu **nie** ma: model **nie** podaje, w którym miejscu tekstu cytat się
-znajduje. Pozycję wyliczymy sami (etap 5), bo to jedyny sposób, by nie dać się oszukać.
+- **`statement`** — fakt ujęty własnymi słowami (do czytania przez człowieka),
+- **`kind`** — rodzaj faktu: **`direct`** (napisany w tekście wprost) albo **`inferred`**
+  (wywnioskowany przez model z tekstu). Te dwa **nigdy się nie zlewają** — patrz
+  [Krok 11](#krok-11),
+- **`quotes`** — lista **dosłownych** fragmentów źródła, na których fakt się opiera
+  („łańcuch dowodów"). Dla faktu `direct` to jego poparcie; dla `inferred` to **przesłanki**
+  wniosku. Fakt może mieć wiele cytatów — także z różnych miejsc dokumentu (fakt rozproszony).
+
+Ważne, czego tu **nie** ma: model **nie** podaje, w którym miejscu tekstu cytaty się
+znajdują. Pozycje wyliczymy sami (etap 5), bo to jedyny sposób, by nie dać się oszukać.
 
 ### 5.4. Etap 4 — sprawdzenie, czy odpowiedź ma właściwą formę
 
@@ -315,8 +343,8 @@ Odpowiedź modelu przechodzi przez `LLMClient.structured`:
 1. Jeśli model owinął JSON w blok ```` ```json … ``` ```` — zdejmujemy tę otoczkę (małe
    modele często to robią).
 2. Próbujemy odczytać i **zwalidować** wynik względem schematu (`Extraction`): czy to
-   poprawny JSON, czy są dokładnie pola `quote` i `statement`, czy nie są puste, czy nie
-   ma pól-śmieci.
+   poprawny JSON, czy są pola `statement`, `kind` (tylko „direct"/„inferred") i `quotes`
+   (co najmniej jeden), czy nie są puste, czy nie ma pól-śmieci.
 3. Jeśli walidacja się nie uda — doklejamy do rozmowy komunikat błędu („poprzednia
    odpowiedź nie spełniła schematu, popraw") i **pytamy model ponownie**, do ustalonego
    limitu prób. Po wyczerpaniu prób zgłaszamy czytelny błąd.
@@ -324,60 +352,76 @@ Odpowiedź modelu przechodzi przez `LLMClient.structured`:
 To pierwsza z dwóch siatek bezpieczeństwa: pilnuje **formy** odpowiedzi. Druga (etap 5)
 pilnuje jej **prawdziwości**.
 
-### 5.5. Etap 5 — weryfikacja każdego cytatu (serce anty-halucynacji)
+### 5.5. Etap 5 — weryfikacja każdego cytatu-gruntu (serce anty-halucynacji)
 
-Dla **każdego** faktu z listy wykonujemy `add_evidence`, które nie ufa modelowi na słowo,
-tylko sprawdza cytat w oryginale funkcją `find_span`:
+Dla **każdego cytatu** z listy `quotes` danego faktu wykonujemy `add_evidence`, które nie
+ufa modelowi na słowo, tylko sprawdza cytat w oryginale funkcją `find_span`:
 
-1. Bierzemy `quote` i pomijamy otaczające spacje.
+1. Bierzemy cytat i pomijamy otaczające spacje.
 2. Dzielimy go na słowa i budujemy wzorzec „słowo — dowolne białe znaki — słowo — …".
    Dzięki temu **znaki niebiałe (litery, cyfry, interpunkcja) muszą pasować co do znaku**,
    ale różnice w spacjach czy przejściach do nowej linii są tolerowane (model często zwija
    tekst).
 3. Szukamy tego wzorca w `full_text` źródła.
-   - **Znaleziono** → zwracamy pozycję `(start, end)` w oryginale. Fakt ma pokrycie.
-   - **Nie znaleziono** → funkcja zwraca „brak", a `add_evidence` zgłasza `SpanNotVerified`.
+   - **Znaleziono** → tworzymy **grunt** (`Evidence`): dosłowny cytat, pozycja `(start, end)`
+     w oryginale i „metryczka" pochodzenia (jaki proces, jaki model, kiedy).
+   - **Nie znaleziono** → grunt nie powstaje (`SpanNotVerified`); ten cytat się nie liczy.
 
-Jeśli cytat ma pokrycie, tworzymy **dowód** (`Evidence`): dosłowny cytat, jego pozycja
-`start`/`end`, `statement`, oraz „metryczkę" pochodzenia (jaki proces go wytworzył, jaki
-model, kiedy). Jeśli cytatu nie ma w tekście — dowód **nie powstaje**; faza łapie ten
-wyjątek i **zlicza fakt jako odrzucony**. Halucynacja fizycznie nie może wejść do bazy.
+### 5.6. Etap 6 — złożenie faktu z gruntów (reguła zapisu)
 
-### 5.6. Etap 6 — zapis kandydatów i podsumowanie
+Gdy wszystkie cytaty danego faktu przejdą weryfikację, patrzymy, ile z nich się potwierdziło:
 
-Zweryfikowane dowody trafiają do archiwum ze statusem **`candidate`** (kandydat). Faza
-zwraca podsumowanie: ile faktów zapisano jako kandydatów, ile odrzucono z braku pokrycia,
-oraz sygnał „potrzebna decyzja człowieka" (`needs_human`). W wierszu poleceń widzisz tę
-listę od razu; w interfejsie pojawia się jako lista do zaznaczenia.
+- **Zero potwierdzonych gruntów** → fakt jest bezpodstawny (halucynacja) i **nie powstaje**;
+  zliczamy go jako odrzucony.
+- **Co najmniej jeden potwierdzony grunt** → zapisujemy fakt jako `Claim` (z jego rodzajem
+  `kind`) i wiążemy go ze wszystkimi potwierdzonymi gruntami (powiązanie wiele-do-wielu).
+  Jeśli część cytatów odpadła, fakt jest dodatkowo oznaczony jako **„częściowy"** — do uwagi
+  człowieka.
+
+Fakty rodzą się ze statusem **`candidate`** (kandydat). Faza zwraca podsumowanie: ile faktów
+zapisano (w tym częściowych), ile odrzucono z braku pokrycia, oraz sygnał „potrzebna decyzja
+człowieka" (`needs_human`). Kluczowe: **fakt „wprost" i fakt „wywnioskowany" są zapisane z
+różnymi etykietami i nigdy nie wyglądają tak samo** — człowiek od razu widzi, co jest cytatem,
+a co wnioskiem modelu.
 
 ### 5.7. Etap 7 — decyzja człowieka (próg)
 
 Kandydat to jeszcze nie fakt zatwierdzony. Człowiek przegląda listę i **akceptuje** lub
-**odrzuca** każdy z osobna. Decyzja zmienia status dowodu na `accepted` albo `rejected` i
-zapisuje, **kto** i **kiedy** ją podjął. Dopiero zaakceptowane dowody uznajemy za
-potwierdzone. To realizacja zasady „człowiek decyduje" (system nigdy nie przepycha
-wniosków sam).
+**odrzuca** każdy **fakt** z osobna (widząc jego rodzaj i wszystkie grunty). Decyzja zmienia
+status faktu (`Claim`) na `accepted` albo `rejected` i zapisuje, **kto** i **kiedy** ją
+podjął. Dopiero zaakceptowane fakty uznajemy za potwierdzone. To realizacja zasady „człowiek
+decyduje" (system nigdy nie przepycha wniosków sam).
 
-### 5.8. Konkretny przykład
+### 5.8. Konkretne przykłady
 
-Załóżmy, że w dokumencie jest zdanie:
+**Przykład 1 — fakt wprost, weryfikacja cytatu.** W dokumencie jest zdanie:
 
 > `Rada gminy przyjęła uchwałę nr 12 w sprawie budżetu na rok 2025.`
 
-Model zwraca dwa fakty:
+| Fakt (`kind`) | `quotes` (grunty) | Wynik |
+|---|---|---|
+| „Rada przyjęła uchwałę" (`direct`) | `["przyjęła uchwałę nr 12"]` | **Znaleziono** → fakt zapisany, grunt na pozycji np. (11, 33) |
+| „Rada przyjęła uchwałę nr 13" (`direct`) | `["przyjęła uchwałę nr 13"]` | **Nie znaleziono** (12 ≠ 13) → brak gruntu → fakt **odrzucony** |
 
-| # | `quote` (dowód) | `statement` (streszczenie) | Wynik weryfikacji |
-|---|---|---|---|
-| A | `przyjęła uchwałę nr 12` | Rada przyjęła uchwałę. | **Znaleziono** w tekście → zapis jako kandydat, pozycja np. (11, 33) |
-| B | `przyjęła uchwałę nr 13` | Rada przyjęła uchwałę nr 13. | **Nie znaleziono** (12 ≠ 13) → `SpanNotVerified` → odrzucone, brak zapisu |
+Drugi fakt wygląda równie wiarygodnie, ale model przekręcił numer — w oryginale nie ma
+„nr 13", więc wypada automatycznie. (Odwrotnie: zwinięcie spacji czy przejścia do nowej linii
+jest tolerowane, bo znaki niebiałe się zgadzają.)
 
-Fakt A ma pokrycie znak w znak, więc wchodzi do archiwum jako kandydat. Fakt B wygląda
-równie wiarygodnie, ale model przekręcił numer — w oryginale nie ma „nr 13", więc **wypada
-automatycznie**, zanim ktokolwiek go zobaczy jako potwierdzony. To właśnie ta różnica
-chroni przed halucynacją. Sytuacja odwrotna — model zwija spacje albo zamienia przejście do
-nowej linii na spację — jest tolerowana, bo treść (znaki niebiałe) się zgadza.
+**Przykład 2 — fakt wywnioskowany, wiele gruntów.** W dokumencie są dwa zdania:
 
-Ten przykład jest jednocześnie realnym testem w kodzie
+> `Zorganizowano 3 konferencje.` … `Każda konferencja zgromadziła po 100 osób.`
+
+| Fakt (`kind`) | `quotes` (przesłanki) | Wynik |
+|---|---|---|
+| „Konferencje objęły ok. 300 osób" (`inferred`) | `["3 konferencje", "po 100 osób"]` | **Obie znalezione** → fakt zapisany jako wywnioskowany, powiązany z dwoma gruntami |
+
+Tu konkluzji („300 osób") **nie ma w tekście** — jest wnioskiem modelu. Nie próbujemy jej
+kotwiczyć; kotwiczymy jej **przesłanki** (obie dosłownie potwierdzone), a sam fakt oznaczamy
+jako `inferred`, żeby człowiek ocenił, czy skok wnioskowy jest trafny. Gdyby któraś przesłanka
+nie występowała w tekście, fakt zostałby oznaczony jako „częściowy" (lub odrzucony, gdyby nie
+potwierdziła się żadna).
+
+Przykłady te są jednocześnie realnymi testami w kodzie
 (`tests/test_span_verification.py`, `tests/test_extract_phase.py`).
 
 ---
@@ -405,18 +449,22 @@ Cztery standardy, każdy odpowiada za inną warstwę (nie konkurują ze sobą):
 | **FaBiO** (SPAR) | **Typ dokumentu** źródłowego | raport, artykuł naukowy, praca dyplomowa, zbiór danych |
 | **SKG-IF** | **Format wymiany** metadanych naukowych | identyfikatory (DOI, ORCID), autorzy, czasopisma |
 | **SKOS** | **Słowniki dziedzinowe** (planowane) | lista typów dowodów, kryteria oceny |
-| **CiTO** (SPAR) | **Relacje argumentacyjne** (planowane, POC-2) | ten dowód „popiera" / „podważa" to twierdzenie |
+| **CiTO** (SPAR) | **Relacje argumentacyjne** (planowane, POC-2) | ten grunt „popiera" / „podważa" to twierdzenie |
 
-Jak to wygląda konkretnie w bazie (krok 3):
+Jak to wygląda konkretnie w bazie (trzy encje):
 
 - **`Source`** (dokument) jest opisany jako „byt" w rozumieniu PROV-O, otypowany klasą
   FaBiO (np. „raport"), z polami bibliograficznymi ze standardu Dublin Core (tytuł,
   język) oraz listą identyfikatorów w modelu SKG-IF (np. DOI).
-- **`Evidence`** (zweryfikowany cytat) łączy dwa standardy naraz: jest „bytem"
-  PROV-O, który „został zacytowany ze" źródła (`prov:wasQuotedFrom`), a zarazem
-  „adnotacją" w rozumieniu Web Annotation — dokładny cytat to selektor tekstu
-  (`exact`), a pozycja od-do to selektor pozycji (`start`/`end`). Do tego pola
-  pochodzenia: kiedy powstał, jaki proces i jaki model go wytworzył.
+- **`Evidence`** (grunt — zweryfikowany cytat) łączy dwa standardy: jest „bytem" PROV-O,
+  który „został zacytowany ze" źródła (`prov:wasQuotedFrom`), a zarazem „adnotacją" w
+  rozumieniu Web Annotation — dokładny cytat to selektor tekstu (`exact`), a pozycja od-do
+  to selektor pozycji (`start`/`end`). Do tego pola pochodzenia.
+- **`Claim`** (fakt) jest „bytem" PROV-O, który **`prov:wasDerivedFrom`** swoje grunty
+  (przez powiązanie wiele-do-wielu `ClaimEvidence`). Niesie treść, rodzaj (`direct` /
+  `inferred`), pochodzenie oraz stan progu człowieka (kandydat / zaakceptowany / odrzucony).
+  Rozdzielenie faktu (`Claim`) od gruntu (`Evidence`) to właśnie to, co pozwala jednemu
+  faktowi opierać się na wielu cytatach i odróżnić fakt cytowany od wywnioskowanego.
 
 **Decyzja o przechowywaniu:** zostajemy przy zwykłej bazie relacyjnej (SQLite), a
 zgodność ze standardami realizujemy przez **nazewnictwo pól** i przez **eksport do
@@ -483,10 +531,10 @@ zachowanie, nie błąd.
 ## 8. Co jest dalej w planie
 <a id="8-co-jest-dalej-w-planie"></a>
 
-Zbudowane: **kroki 0–10** — cały przepływ POC-1 z progiem człowieka i interfejsem
-graficznym: szkielet, weryfikacja cytatu, kontrakt danych, baza z pochodzeniem,
-ustawienia, klient AI, wczytywanie dokumentów, faza ekstrakcji, wiersz poleceń, próg
-człowieka (akceptuj/odrzuć) oraz GUI Gradio.
+Zbudowane: **kroki 0–11** — cały przepływ POC-1 (szkielet, weryfikacja cytatu, kontrakt
+danych, baza z pochodzeniem, ustawienia, klient AI, wczytywanie dokumentów, faza ekstrakcji,
+wiersz poleceń, próg człowieka, GUI Gradio) **oraz fundament POC-2**: typowane fakty
+(direct / inferred) z wieloma dosłownie zakotwiczonymi gruntami (Krok 11).
 
 Uruchomienie interfejsu:
 ```bash
@@ -494,16 +542,11 @@ uv sync --extra ui          # doinstaluj Gradio (raz)
 uv run imeto ui             # otwórz interfejs w przeglądarce
 ```
 
-Następne kroki (POC-2 i dalej): propozycje tropów, rozbiór argumentacyjny ZA/PRZECIW,
-asystent redakcyjny, eksport dossier (m.in. do formatu JSON-LD zgodnego ze standardami),
-mapa twierdzeń. Warunkowo, gdy zajdzie realna potrzeba: „dyrygent" wielu faz (sekwencer),
-przeniesienie na bazę Postgres, prawdziwe API oraz pobieranie metadanych naukowych
-(OpenAlex / ORCID / Crossref).
-
-Dalej (POC-2 i POC-3): propozycje tropów, rozbiór argumentacyjny ZA/PRZECIW, asystent
-redakcyjny, eksport dossier oraz mapa twierdzeń. Warunkowo, gdy zajdzie realna potrzeba:
-przeniesienie na bazę Postgres, dodanie prawdziwego API i pobieranie metadanych naukowych
-(OpenAlex/ORCID/Crossref).
+Następne kroki (POC-2 i dalej): propozycje tropów, rozbiór argumentacyjny ZA/PRZECIW
+(z użyciem relacji CiTO), asystent redakcyjny, eksport dossier (m.in. do formatu JSON-LD
+zgodnego ze standardami), mapa twierdzeń. Warunkowo, gdy zajdzie realna potrzeba: „dyrygent"
+wielu faz (sekwencer), przeniesienie na bazę Postgres, prawdziwe API oraz pobieranie
+metadanych naukowych (OpenAlex / ORCID / Crossref).
 
 ---
 
@@ -516,6 +559,16 @@ przeniesienie na bazę Postgres, dodanie prawdziwego API i pobieranie metadanych
 - **Cytat / span** — dosłowny fragment tekstu źródłowego. „Span" to jego pozycja: od
   którego do którego znaku występuje w dokumencie.
 - **Kotwiczenie (anchoring)** — powiązanie cytatu z jego dokładnym miejscem w źródle.
+- **Fakt (`Claim`)** — twierdzenie wydobyte z dokumentu. Ma rodzaj (`kind`) i opiera się na
+  jednym lub wielu gruntach. To jego akceptuje/odrzuca człowiek.
+- **Fakt „direct" (wprost)** — napisany w źródle dosłownie; grunty to jego bezpośrednie
+  poparcie.
+- **Fakt „inferred" (wywnioskowany)** — konkluzja, której w tekście nie ma wprost; model ją
+  wyciągnął. Grunty to jej **przesłanki**. Nigdy nie mylimy go z faktem „direct".
+- **Grunt (`Evidence`)** — dosłownie zakotwiczony cytat popierający fakt. Jeden fakt może
+  mieć wiele gruntów (fakt rozproszony), a grunt służyć wielu faktom.
+- **Łańcuch dowodów** — wymóg, by model dla każdego faktu wskazał dosłowne fragmenty źródła,
+  na których fakt się opiera. Brak takiego fragmentu = sygnał halucynacji.
 - **Provenance (pochodzenie danych)** — informacja o tym, skąd dany fakt się wziął: z
   jakiego źródła, w jakim procesie, przez jaki model, kiedy. Pozwala odtworzyć i
   zaudytować każdą informację.
