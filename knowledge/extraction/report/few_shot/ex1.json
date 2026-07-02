@@ -1,0 +1,10 @@
+{
+  "fragment": "W ramach projektu przeszkolono 128 nauczycieli z 24 szkół w województwie mazowieckim.",
+  "facts": [
+    {
+      "statement": "Przeszkolono 128 nauczycieli z 24 szkół.",
+      "kind": "direct",
+      "quotes": ["przeszkolono 128 nauczycieli z 24 szkół w województwie mazowieckim"]
+    }
+  ]
+}

@@ -6,12 +6,12 @@ Logika (extract_candidates / apply_decisions) jest oddzielona od warstwy Gradio,
 żeby dała się testować bez uruchamiania interfejsu. `import gradio` siedzi wewnątrz
 build_ui, więc rdzeń i testy nie ciągną tej ciężkiej zależności."""
 
-from pathlib import Path
 from typing import Any
 
 from imeto.config import settings
 from imeto.core.llm import LLMClient
 from imeto.core.provenance import ProvenanceStore
+from imeto.ingest.sources import source_from_file
 from imeto.phases.base import PhaseContext
 from imeto.phases.extract import ExtractPhase
 from imeto.registries.skills import SkillRegistry
@@ -27,7 +27,8 @@ def extract_candidates(
 ) -> list[tuple[int, str]]:
     """Uruchamia ekstrakcję i zwraca listę (id_faktu, etykieta) kandydatów."""
     ctx = PhaseContext(store=store, llm=llm, skills=skills)
-    result = ExtractPhase(Path(document), work_type).run(ctx)
+    source_id = source_from_file(store, document, work_type)
+    result = ExtractPhase(source_id, work_type).run(ctx)
     out: list[tuple[int, str]] = []
     for cid in result.produced:
         claim = store.get_claim(cid)

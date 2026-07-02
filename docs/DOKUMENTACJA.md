@@ -278,6 +278,50 @@ fakt bez ani jednego zweryfikowanego gruntu = halucynacja → odrzucony; fakt z 
 gruntów niezweryfikowanych → zapisany, ale oznaczony jako „częściowy" do sprawdzenia. Pełny
 przebieg opisuje [rozdział 5](#5-jak-wyciagane-sa-fakty).
 
+### Krok 12 — Ekstrakcja per typ wytworu (skille jako dane)
+<a id="krok-12"></a>
+
+**Prosto:** fakty wyciągamy nie tylko ze sprawozdań, ale z **różnych wytworów naukowych** —
+artykułów, raportów, wniosków, książek, posterów, prezentacji. W każdym z nich „fakt"
+znaczy co innego: w artykule to wynik lub metoda, w raporcie zrealizowane działanie, a we
+wniosku — **plan lub cel, a nie dokonanie**. Dlatego **człowiek wybiera typ** wgrywanego
+dokumentu, a system dobiera do niego odpowiednią instrukcję („skill"), która mówi modelowi,
+czego w tym typie szukać. Sama zasada dosłowności cytatu i rodzaje faktu (wprost /
+wywnioskowany) pozostają wspólne dla wszystkich typów.
+
+**Technicznie:** typ wytworu (`WorkType`: article / report / proposal / book / poster /
+presentation) decyduje o klasie FaBiO zapisanej w źródle oraz o tym, który skill zostanie
+doklejony do promptu. Skille mają **format Agent Skills**: każdy to katalog
+`knowledge/extraction/<typ>/` z plikiem `SKILL.md` (nagłówek YAML z metadanymi + instrukcje:
+rola, co jest faktem, direct vs inferred, pułapki typu) oraz folderem `few_shot/` z
+przykładami (`*.json`). To **warstwa 4** — wiedza dziedzinowa jako **dane**, edytowalna przez
+eksperta bez dotykania kodu; ładuje ją `SkillRegistry` (zdejmuje nagłówek, dokleja przykłady).
+Prompt składa się z dwóch części: uniwersalnej bazy (format JSON, łańcuch dowodów, dosłowność,
+direct/inferred) plus skillu wybranego typu. Kluczowe: **jeden przepływ i jeden mechanizm
+anty-halucynacyjny dla wszystkich typów** — zmienność siedzi wyłącznie w wymiennych plikach
+skilli, nie w rozgałęzieniach kodu. Nowy typ = nowy katalog skilla, zero zmian w kodzie. Typ
+podaje się flagą `--type` w wierszu poleceń albo z listy rozwijanej w interfejsie.
+
+### Krok 13 — Pobieranie wytworów przez API (kotwice metadanych)
+<a id="krok-13"></a>
+
+**Prosto:** wytwór nie musi być plikiem na dysku — można go **pobrać z internetu** po jego
+identyfikatorze. Podając **DOI** (numer publikacji), system ściąga z bazy OpenAlex tytuł,
+typ i **abstrakt**; podając **ORCID** (identyfikator badacza), dostajemy listę jego prac
+(ich numerów DOI), które potem można pojedynczo przetworzyć. Ważne ograniczenie wynika wprost
+z naszej zasady: skoro każdy fakt musi mieć dosłowne pokrycie w tekście, **wydobywamy fakty
+tylko z tekstu, który faktycznie mamy** — a z API to zwykle sam abstrakt, nie pełny artykuł.
+Pełny tekst pobieramy tylko wtedy, gdy jest otwarcie dostępny (Open Access) — to osobny,
+późniejszy krok.
+
+**Technicznie:** `imeto/ingest/loaders.py` woła publiczne API (OpenAlex po DOI — odtwarza
+abstrakt z „odwróconego indeksu"; ORCID po liście prac). Pozyskanie źródła (z pliku albo z
+API) jest oddzielone od ekstrakcji: `imeto/ingest/sources.py` buduje i zapisuje `Source`, a
+`ExtractPhase` operuje już tylko na gotowym `source_id`. Dzięki temu ścieżka „z pliku" i „z
+API" korzystają z tego samego kodu ekstrakcji. W wierszu poleceń: `imeto ingest --doi <DOI>
+--type <typ>` albo `imeto ingest --orcid <ORCID>`. Do „polite pool" API (grzeczniejsze
+limity) służy `CONTACT_EMAIL` w ustawieniach.
+
 ---
 
 ## 5. Jak dokładnie wyciągane są fakty — krok po kroku
@@ -309,18 +353,22 @@ cytatów to po prostu numery znaków w tym napisie — nie ma osobnej „mapy st
 ### 5.2. Etap 2 — zapis źródła do archiwum
 
 Zanim cokolwiek wyciągniemy, dokument zostaje zapisany jako **źródło** (`Source`) w bazie:
-jego pełny tekst plus identyfikator (na razie ścieżka do pliku). Źródło dostaje swój numer
-(`source_id`). Dzięki temu każdy przyszły fakt będzie miał do czego się „przykleić" i
-zawsze będzie wiadomo, z którego dokładnie dokumentu pochodzi.
+jego pełny tekst, identyfikator oraz **typ wytworu wskazany przez człowieka**, zapisany jako
+odpowiednia klasa FaBiO. Źródło może pochodzić **z pliku** (PDF/DOCX) albo być **pobrane z
+API** po DOI/ORCID (Krok 13) — dalszy przebieg jest identyczny. Źródło dostaje swój numer
+(`source_id`); dzięki temu każdy przyszły fakt ma do czego się „przykleić" i zawsze wiadomo,
+z którego dokumentu (i jakiego typu) pochodzi.
 
 ### 5.3. Etap 3 — pytanie do modelu AI
 
 Do modelu wysyłamy dwie rzeczy:
 
-- **Instrukcję** (stały tekst `EXTRACT_SYSTEM`): „wydobądź fakty; zwróć wyłącznie JSON w
-  formacie `{"facts": [{"statement": "...", "kind": "direct|inferred", "quotes": ["..."]}]}`;
-  cytaty muszą być dosłownymi fragmentami tekstu, skopiowanymi znak w znak; każdy fakt musi
-  mieć co najmniej jeden cytat; nie zmyślaj cytatów; jeśli nie ma faktów, zwróć pustą listę".
+- **Instrukcję**, złożoną z dwóch części: **bazy** (stały tekst `EXTRACT_SYSTEM`) — „wydobądź
+  fakty; zwróć wyłącznie JSON w formacie `{"facts": [{"statement": "...", "kind":
+  "direct|inferred", "quotes": ["..."]}]}`; cytaty muszą być dosłownymi fragmentami tekstu;
+  każdy fakt musi mieć co najmniej jeden cytat; nie zmyślaj" — oraz **skillu wybranego typu**
+  wytworu (`knowledge/extraction/<typ>.md`), który dopowiada, *co jest faktem* w tym rodzaju
+  dokumentu (np. we wniosku: plan/cel, nie dokonanie). Patrz [Krok 12](#krok-12).
 - **Treść dokumentu** (`full_text`) jako materiał do przeczytania.
 
 Model ma zwrócić listę faktów, gdzie każdy fakt ma trzy elementy:
@@ -519,22 +567,33 @@ find_span(src, "przyjęła uchwałę nr 13")   # -> None      (przekręcona cyfr
 ```bash
 export LLM_BASE_URL="http://localhost:8888/v1"   # adres Twojego modelu
 export LLM_MODEL="<nazwa modelu>"                # np. z Unsloth Studio / vLLM
-uv run imeto run data/sprawozdanie_test.docx
+uv run imeto run data/sprawozdanie_test.docx --type report
 ```
-Program wypisze podsumowanie (ile faktów zapisano, ile odrzucono jako bez pokrycia) oraz
-treść każdego zapisanego faktu z jego dosłownym cytatem i pozycją. Bez skonfigurowanego
-modelu polecenie zgłosi czytelny komunikat „llm_model nie ustawiony" — to poprawne
-zachowanie, nie błąd.
+Flaga `--type` (wymagana) mówi, jakiego typu jest dokument: `article`, `report`,
+`proposal`, `book`, `poster` albo `presentation`. Program wypisze podsumowanie (ile faktów
+zapisano — w tym częściowych — ile odrzucono jako bez pokrycia) oraz każdy fakt z jego
+rodzajem (`direct`/`inferred`) i dosłownymi cytatami-gruntami. Bez skonfigurowanego modelu
+polecenie zgłosi czytelny komunikat „llm_model nie ustawiony" — to poprawne zachowanie.
+
+**Pobierz wytwór z internetu (zamiast pliku):**
+```bash
+uv run imeto ingest --doi 10.1234/przyklad --type article   # po DOI (z abstraktu)
+uv run imeto ingest --orcid 0000-0002-1825-0097             # lista prac badacza
+```
+`--doi` ściąga metadane i abstrakt z OpenAlex i od razu wydobywa fakty; `--orcid` wypisuje
+listę prac (DOI-ów) do dalszego przetworzenia. Uwaga: z API mamy zwykle sam abstrakt.
 
 ---
 
 ## 8. Co jest dalej w planie
 <a id="8-co-jest-dalej-w-planie"></a>
 
-Zbudowane: **kroki 0–11** — cały przepływ POC-1 (szkielet, weryfikacja cytatu, kontrakt
+Zbudowane: **kroki 0–13** — cały przepływ POC-1 (szkielet, weryfikacja cytatu, kontrakt
 danych, baza z pochodzeniem, ustawienia, klient AI, wczytywanie dokumentów, faza ekstrakcji,
-wiersz poleceń, próg człowieka, GUI Gradio) **oraz fundament POC-2**: typowane fakty
-(direct / inferred) z wieloma dosłownie zakotwiczonymi gruntami (Krok 11).
+wiersz poleceń, próg człowieka, GUI Gradio), **fundament POC-2** — typowane fakty
+(direct / inferred) z wieloma dosłownie zakotwiczonymi gruntami (Krok 11), **ekstrakcja
+per typ wytworu** ze skillami w formacie Agent Skills (Krok 12) oraz **pobieranie wytworów
+przez API** (DOI/ORCID, Krok 13).
 
 Uruchomienie interfejsu:
 ```bash
@@ -542,11 +601,11 @@ uv sync --extra ui          # doinstaluj Gradio (raz)
 uv run imeto ui             # otwórz interfejs w przeglądarce
 ```
 
-Następne kroki (POC-2 i dalej): propozycje tropów, rozbiór argumentacyjny ZA/PRZECIW
-(z użyciem relacji CiTO), asystent redakcyjny, eksport dossier (m.in. do formatu JSON-LD
-zgodnego ze standardami), mapa twierdzeń. Warunkowo, gdy zajdzie realna potrzeba: „dyrygent"
-wielu faz (sekwencer), przeniesienie na bazę Postgres, prawdziwe API oraz pobieranie
-metadanych naukowych (OpenAlex / ORCID / Crossref).
+Następne kroki: **pobieranie pełnego tekstu Open Access** (na razie z API mamy sam abstrakt),
+kolejne typy wytworów, propozycje tropów, rozbiór argumentacyjny ZA/PRZECIW (relacje CiTO),
+asystent redakcyjny, eksport dossier (m.in. JSON-LD), mapa twierdzeń, golden set do pomiaru
+jakości. Warunkowo: „dyrygent" wielu faz (sekwencer), Postgres, prawdziwe API. Dotrenowanie
+modelu (fine-tuning) świadomie odłożone — najpierw prompty, few-shot w skillach i golden set.
 
 ---
 
@@ -569,6 +628,17 @@ metadanych naukowych (OpenAlex / ORCID / Crossref).
   mieć wiele gruntów (fakt rozproszony), a grunt służyć wielu faktom.
 - **Łańcuch dowodów** — wymóg, by model dla każdego faktu wskazał dosłowne fragmenty źródła,
   na których fakt się opiera. Brak takiego fragmentu = sygnał halucynacji.
+- **Typ wytworu (`WorkType`)** — rodzaj przetwarzanego dokumentu: artykuł, raport, wniosek
+  (docelowo więcej). Wskazuje go człowiek przy imporcie. Decyduje o klasie FaBiO źródła i o
+  tym, który skill ekstrakcji zostanie użyty.
+- **Skill / warstwa wiedzy** — instrukcja dziedzinowa w formacie Agent Skills: katalog
+  `knowledge/extraction/<typ>/` z `SKILL.md` (nagłówek + instrukcje) i przykładami `few_shot`.
+  Doklejana do promptu dla danego typu wytworu. To „wiedza jako dane": ekspert stroi
+  ekstrakcję, nie dotykając kodu.
+- **Kotwica metadanych (DOI / ORCID / OpenAlex)** — pobranie wytworu z publicznego API:
+  **DOI** to identyfikator publikacji (po nim OpenAlex zwraca tytuł, typ i abstrakt),
+  **ORCID** to identyfikator badacza (zwraca listę jego prac). Źródło deterministycznych
+  metadanych, uzupełniające pliki lokalne.
 - **Provenance (pochodzenie danych)** — informacja o tym, skąd dany fakt się wziął: z
   jakiego źródła, w jakim procesie, przez jaki model, kiedy. Pozwala odtworzyć i
   zaudytować każdą informację.

@@ -1,0 +1,10 @@
+{
+  "fragment": "• Przychód wzrósł o 30% r/r • Rekomendacja: rozszerzyć program na 5 województw",
+  "facts": [
+    {
+      "statement": "Przychód wzrósł o 30% rok do roku.",
+      "kind": "direct",
+      "quotes": ["Przychód wzrósł o 30% r/r"]
+    }
+  ]
+}

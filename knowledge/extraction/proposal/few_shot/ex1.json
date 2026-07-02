@@ -1,0 +1,15 @@
+{
+  "fragment": "Celem projektu jest przeszkolenie 200 nauczycieli. Wnioskowana kwota wynosi 480 000 zł.",
+  "facts": [
+    {
+      "statement": "Planowany cel: przeszkolenie 200 nauczycieli.",
+      "kind": "direct",
+      "quotes": ["Celem projektu jest przeszkolenie 200 nauczycieli"]
+    },
+    {
+      "statement": "Wnioskowana kwota: 480 000 zł.",
+      "kind": "direct",
+      "quotes": ["Wnioskowana kwota wynosi 480 000 zł"]
+    }
+  ]
+}

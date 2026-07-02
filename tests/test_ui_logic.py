@@ -29,9 +29,9 @@ def _make_docx(path: Path) -> Path:
 
 
 def _skills(tmp_path: Path) -> SkillRegistry:
-    d = tmp_path / "knowledge" / "extraction"
+    d = tmp_path / "knowledge" / "extraction" / "report"
     d.mkdir(parents=True)
-    (d / "report.md").write_text("skill testowy", encoding="utf-8")
+    (d / "SKILL.md").write_text("## Rola\nskill testowy", encoding="utf-8")
     return SkillRegistry(tmp_path / "knowledge")
 
 

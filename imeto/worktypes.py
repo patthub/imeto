@@ -9,6 +9,9 @@ class WorkType(StrEnum):
     article = "article"
     report = "report"
     proposal = "proposal"
+    book = "book"
+    poster = "poster"
+    presentation = "presentation"
 
 
 # typ wytworu -> klasa FaBiO (URI), zapisywana jako Source.fabio_type
@@ -16,4 +19,7 @@ FABIO: dict[WorkType, str] = {
     WorkType.article: "http://purl.org/spar/fabio/JournalArticle",
     WorkType.report: "http://purl.org/spar/fabio/Report",
     WorkType.proposal: "http://purl.org/spar/fabio/ResearchProposal",
+    WorkType.book: "http://purl.org/spar/fabio/Book",
+    WorkType.poster: "http://purl.org/spar/fabio/ConferencePoster",
+    WorkType.presentation: "http://purl.org/spar/fabio/Presentation",
 }

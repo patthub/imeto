@@ -1,0 +1,10 @@
+{
+  "fragment": "Autor dowodzi, że reforma z 1999 roku pogłębiła nierówności edukacyjne na wsi.",
+  "facts": [
+    {
+      "statement": "Autor twierdzi, że reforma z 1999 r. pogłębiła nierówności edukacyjne na wsi.",
+      "kind": "direct",
+      "quotes": ["reforma z 1999 roku pogłębiła nierówności edukacyjne na wsi"]
+    }
+  ]
+}

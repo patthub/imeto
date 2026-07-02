@@ -1,6 +1,8 @@
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 from docx import Document
 from typer.testing import CliRunner
 
@@ -52,3 +54,58 @@ def test_run_extracts_and_prints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 def test_run_missing_file_errors():
     result = runner.invoke(app, ["run", "/nie/ma/takiego.docx"])
     assert result.exit_code != 0  # walidacja ścieżki przez Typer, bez dotykania modelu
+
+
+@respx.mock
+def test_ingest_doi_fetches_and_extracts(monkeypatch: pytest.MonkeyPatch):
+    respx.get("https://api.openalex.org/works/doi:10.1/x").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "title": "Praca",
+                "type": "article",
+                "abstract_inverted_index": {
+                    "Rada": [0], "gminy": [1], "przyjęła": [2],
+                    "uchwałę": [3], "nr": [4], "12": [5],
+                },
+            },
+        )
+    )
+    monkeypatch.setattr(settings, "db_url", "sqlite://")
+    monkeypatch.setattr("imeto.cli.LLMClient", FakeLLMClient)
+
+    result = runner.invoke(app, ["ingest", "--doi", "10.1/x", "--type", "article"])
+
+    assert result.exit_code == 0
+    assert "1 faktów zapisanych" in result.stdout
+    assert "uchwałę nr 12" in result.stdout
+
+
+@respx.mock
+def test_ingest_orcid_lists_dois():
+    respx.get("https://pub.orcid.org/v3.0/0000-0002-1825-0097/works").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "group": [
+                    {
+                        "work-summary": [
+                            {
+                                "external-ids": {
+                                    "external-id": [
+                                        {
+                                            "external-id-type": "doi",
+                                            "external-id-value": "10.1/a",
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+        )
+    )
+    result = runner.invoke(app, ["ingest", "--orcid", "0000-0002-1825-0097"])
+    assert result.exit_code == 0
+    assert "10.1/a" in result.stdout

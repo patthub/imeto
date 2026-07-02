@@ -18,5 +18,9 @@ class Settings(BaseSettings):
     db_url: str = "sqlite:///imeto.db"
     knowledge_dir: str = "knowledge"
 
+    # Kotwice metadanych (loaders API). Jeden e-mail do "polite pool"
+    # Crossref i OpenAlex — grzeczniejsze limity, ta sama wartość dla obu.
+    contact_email: str | None = None
+
 
 settings = Settings()  # importowane przez CLI/app (rdzeń bierze wartości jawnie)

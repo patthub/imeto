@@ -1,13 +1,17 @@
 from pathlib import Path
 
-from docx import Document
-
-from imeto.core.provenance import ProvenanceStore
+from imeto.core.provenance import ProvenanceStore, Source
 from imeto.core.schemas import ExtractedFact, Extraction
 from imeto.phases.base import PhaseContext
 from imeto.phases.extract import ExtractPhase
 from imeto.registries.skills import SkillRegistry
 from imeto.worktypes import WorkType
+
+TEXT = (
+    "Rada gminy przyjęła uchwałę nr 12 w sprawie budżetu.\n"
+    "Zorganizowano 3 konferencje naukowe.\n"
+    "Każda konferencja zgromadziła po 100 osób."
+)
 
 
 class FakeLLM:
@@ -23,43 +27,40 @@ class FakeLLM:
 
 
 def _skills(tmp_path: Path) -> SkillRegistry:
-    d = tmp_path / "knowledge" / "extraction"
+    d = tmp_path / "knowledge" / "extraction" / "report"
     d.mkdir(parents=True)
-    (d / "report.md").write_text("skill testowy", encoding="utf-8")
+    (d / "SKILL.md").write_text("## Rola\nskill testowy", encoding="utf-8")
     return SkillRegistry(tmp_path / "knowledge")
 
 
-def _make_docx(path: Path) -> Path:
-    doc = Document()
-    doc.add_paragraph("Rada gminy przyjęła uchwałę nr 12 w sprawie budżetu.")
-    doc.add_paragraph("Zorganizowano 3 konferencje naukowe.")
-    doc.add_paragraph("Każda konferencja zgromadziła po 100 osób.")
-    doc.save(str(path))
-    return path
+def _ctx(
+    store: ProvenanceStore, extraction: Extraction, tmp_path: Path
+) -> PhaseContext:
+    return PhaseContext(
+        store=store,
+        llm=FakeLLM(extraction),  # type: ignore[arg-type]
+        skills=_skills(tmp_path),
+    )
 
 
 def _extraction() -> Extraction:
     return Extraction(
         facts=[
-            # direct — grunt weryfikuje się
             ExtractedFact(
                 statement="Rada przyjęła uchwałę budżetową.",
                 kind="direct",
                 quotes=["przyjęła uchwałę nr 12"],
             ),
-            # inferred — dwie przesłanki, obie się weryfikują
             ExtractedFact(
                 statement="Konferencje objęły ok. 300 osób.",
                 kind="inferred",
                 quotes=["3 konferencje", "po 100 osób"],
             ),
-            # halucynacja — żaden grunt nie istnieje → odrzucone
             ExtractedFact(
                 statement="Rozwiązano radę nadzorczą.",
                 kind="direct",
                 quotes=["rozwiązano radę nadzorczą"],
             ),
-            # częściowy — jeden grunt ok, drugi zmyślony
             ExtractedFact(
                 statement="Rada gminy działała.",
                 kind="direct",
@@ -70,15 +71,11 @@ def _extraction() -> Extraction:
 
 
 def test_extract_typed_facts_with_grounds(tmp_path: Path):
-    doc = _make_docx(tmp_path / "s.docx")
     store = ProvenanceStore()
-    ctx = PhaseContext(
-        store=store,
-        llm=FakeLLM(_extraction()),  # type: ignore[arg-type]
-        skills=_skills(tmp_path),
-    )
+    sid = store.add_source(Source(local_identifier="d", full_text=TEXT))
+    ctx = _ctx(store, _extraction(), tmp_path)
 
-    result = ExtractPhase(doc, WorkType.report).run(ctx)
+    result = ExtractPhase(sid, WorkType.report).run(ctx)
 
     assert result.needs_human is True
     # 3 zapisane (direct, inferred, częściowy), 1 odrzucony (halucynacja)
@@ -86,29 +83,21 @@ def test_extract_typed_facts_with_grounds(tmp_path: Path):
     assert "1 odrzuconych" in result.summary
     assert "1 częściowych" in result.summary
 
-    claims = store.claims_for_source(1)
-    kinds = sorted(c.kind for c in claims)
-    assert kinds == ["direct", "direct", "inferred"]
+    claims = store.claims_for_source(sid)
+    assert sorted(c.kind for c in claims) == ["direct", "direct", "inferred"]
 
-    # fakt wywnioskowany ma dwa zakotwiczone grunty
     inferred = next(c for c in claims if c.kind == "inferred")
     assert len(store.evidence_for_claim(inferred.id)) == 2
-
-    # halucynacja nie zostawiła śladu w faktach
     assert all("Rozwiązano" not in c.statement for c in claims)
 
 
 def test_empty_facts_produces_nothing(tmp_path: Path):
-    doc = _make_docx(tmp_path / "s.docx")
     store = ProvenanceStore()
-    ctx = PhaseContext(
-        store=store,
-        llm=FakeLLM(Extraction(facts=[])),  # type: ignore[arg-type]
-        skills=_skills(tmp_path),
-    )
-    result = ExtractPhase(doc, WorkType.report).run(ctx)
+    sid = store.add_source(Source(local_identifier="d", full_text=TEXT))
+    ctx = _ctx(store, Extraction(facts=[]), tmp_path)
+    result = ExtractPhase(sid, WorkType.report).run(ctx)
     assert result.produced == []
 
 
 def test_phase_name():
-    assert ExtractPhase(Path("x.docx"), WorkType.report).name == "extract"
+    assert ExtractPhase(1, WorkType.report).name == "extract"

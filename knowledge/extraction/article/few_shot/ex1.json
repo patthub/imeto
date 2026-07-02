@@ -1,0 +1,15 @@
+{
+  "fragment": "Model osiągnął dokładność 92% na zbiorze testowym, przewyższając metodę bazową (85%).",
+  "facts": [
+    {
+      "statement": "Model osiągnął 92% dokładności na zbiorze testowym.",
+      "kind": "direct",
+      "quotes": ["osiągnął dokładność 92% na zbiorze testowym"]
+    },
+    {
+      "statement": "Model był dokładniejszy od metody bazowej.",
+      "kind": "inferred",
+      "quotes": ["dokładność 92% na zbiorze testowym", "metodę bazową (85%)"]
+    }
+  ]
+}

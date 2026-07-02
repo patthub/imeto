@@ -1,21 +1,23 @@
-"""Faza ekstrakcji: dokument → fakty (direct/inferred) z dosłownie zakotwiczonymi
-gruntami.
+"""Faza ekstrakcji: źródło (już w bazie) → fakty (direct/inferred) z dosłownie
+zakotwiczonymi gruntami.
+
+Faza operuje na `source_id` — pozyskanie źródła (z pliku lub z API) należy do warstwy
+ingest (`imeto.ingest.sources`). Dzięki temu ekstrakcja z pliku i z API idzie tym samym
+kodem.
 
 Realizuje ustaloną zasadę:
 - każdy grunt (cytat) weryfikowany dosłownie przez `add_evidence`,
-- fakt bez ani jednego zweryfikowanego gruntu = halucynacja → ODRZUCANY (nie zapisany),
+- fakt bez ani jednego zweryfikowanego gruntu = halucynacja → ODRZUCANY,
 - fakt z >=1 gruntem zapisywany jako `Claim` z zachowanym `kind` (direct/inferred);
-  brakujące grunty są zliczane (fakt „częściowy" — do uwagi człowieka),
+  brakujące grunty są zliczane (fakt „częściowy"),
 - rodzaj faktu (wprost vs wywnioskowany) nigdy nie jest zlewany."""
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from imeto.core.provenance import Source, SpanNotVerified
+from imeto.core.provenance import SpanNotVerified
 from imeto.core.schemas import Extraction
-from imeto.ingest.parsing import parse_document
 from imeto.phases.base import PhaseContext, PhaseResult
-from imeto.worktypes import FABIO, WorkType
+from imeto.worktypes import WorkType
 
 EXTRACT_SYSTEM = (
     "Jesteś asystentem wydobywającym fakty z wytworów naukowych. Zwróć tylko JSON:\n"
@@ -34,29 +36,22 @@ EXTRACT_SYSTEM = (
 
 @dataclass
 class ExtractPhase:
-    document: Path
+    source_id: int
     work_type: WorkType
     name: str = field(default="extract")
 
     def run(self, ctx: PhaseContext) -> PhaseResult:
-        text = parse_document(self.document)
-        source_id = ctx.store.add_source(
-            Source(
-                local_identifier=str(self.document),
-                full_text=text,
-                fabio_type=FABIO[self.work_type],
-            )
-        )
+        src = ctx.store.get_source(self.source_id)
         # baza (uniwersalne niezmienniki) + skill typu wytworu (co jest faktem)
         skill = ctx.skills.load(self.work_type.value)
         system = f"{EXTRACT_SYSTEM}\n\n{skill}"
-        extraction = ctx.llm.structured(system, text, Extraction)
+        extraction = ctx.llm.structured(system, src.full_text, Extraction)
 
-        activity = f"extract:{source_id}"
+        activity = f"extract:{self.source_id}"
         agent = ctx.llm.model
         produced: list[int] = []
         ungrounded = 0  # fakty bez żadnego zweryfikowanego gruntu (odrzucone)
-        partial = 0  # fakty z częścią gruntów niezweryfikowanych (do uwagi człowieka)
+        partial = 0  # fakty z częścią gruntów niezweryfikowanych
 
         for fact in extraction.facts:
             ev_ids: list[int] = []
@@ -65,7 +60,7 @@ class ExtractPhase:
                 try:
                     ev_ids.append(
                         ctx.store.add_evidence(
-                            source_id, quote, activity=activity, agent=agent
+                            self.source_id, quote, activity=activity, agent=agent
                         )
                     )
                 except SpanNotVerified:
@@ -76,13 +71,13 @@ class ExtractPhase:
             if failed:
                 partial += 1
             claim_id = ctx.store.add_claim(
-                source_id, fact.statement, fact.kind, ev_ids,
+                self.source_id, fact.statement, fact.kind, ev_ids,
                 activity=activity, agent=agent,
             )
             produced.append(claim_id)
 
         summary = (
-            f"źródło {source_id}: {len(produced)} faktów zapisanych "
+            f"źródło {self.source_id}: {len(produced)} faktów zapisanych "
             f"({partial} częściowych), {ungrounded} odrzuconych (bez pokrycia)"
         )
         return PhaseResult(
