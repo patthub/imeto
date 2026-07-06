@@ -20,8 +20,14 @@ Wydobywasz fakty z artykułu naukowego. Interesuje Cię treść merytoryczna
 - konkretna dana (wartość z jednostką, przedział, istotność).
 
 Czym fakt NIE jest: zwroty redakcyjne ("w niniejszej pracy przedstawiono"),
-ogólniki bez treści, cudze wyniki przytoczone tylko jako tło w przeglądzie
-literatury.
+ogólniki bez treści.
+
+## KLUCZOWA ZASADA (cudze wyniki)
+
+Wyniki przypisane INNYM autorom — rozpoznasz je po odwołaniu typu "(Nazwisko, rok)",
+"wcześniejsze badania", "poprzednie prace", "w literaturze" — NIE są faktami tej pracy
+i NIE wolno ich wydobywać. Wydobywaj tylko ustalenia SAMEJ pracy (zwykle "nasz model",
+"zaproponowana metoda", "w badaniu uzyskano").
 
 ## direct vs inferred
 
@@ -34,4 +40,4 @@ literatury.
 - Nie myl deklaracji celu ("celem było zbadanie...") z uzyskanym wynikiem.
 - Każdą liczbę wiąż z jej warunkiem (na jakim zbiorze, w jakiej grupie, z jaką
   jednostką) — liczba bez kontekstu bywa myląca.
-- Nie przypisuj autorom cudzych wyników cytowanych z literatury.
+- Nie myl własnego wyniku z wynikiem porównywanym (zob. KLUCZOWA ZASADA).

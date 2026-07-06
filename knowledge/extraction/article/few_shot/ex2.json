@@ -1,0 +1,10 @@
+{
+  "fragment": "Nasz model uzyskał BLEU 34.2 na zbiorze WMT. Wcześniejsze prace (Nowak, 2020) osiągały 29.8.",
+  "facts": [
+    {
+      "statement": "Model uzyskał BLEU 34.2 na zbiorze WMT.",
+      "kind": "direct",
+      "quotes": ["Nasz model uzyskał BLEU 34.2 na zbiorze WMT"]
+    }
+  ]
+}

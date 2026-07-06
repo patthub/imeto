@@ -15,10 +15,15 @@ def test_source_from_file_sets_fabio(tmp_path: Path):
     doc.save(str(p))
 
     store = ProvenanceStore()
-    sid = source_from_file(store, p, WorkType.report)
+    sid, created = source_from_file(store, p, WorkType.report)
+    assert created is True
     src = store.get_source(sid)
     assert "Przeszkolono 45 osób" in src.full_text
     assert src.fabio_type.endswith("Report")
+
+    # ponowny import tej samej ścieżki nie tworzy duplikatu (idempotencja §6.4)
+    sid2, created2 = source_from_file(store, p, WorkType.report)
+    assert (sid2, created2) == (sid, False)
 
 
 def test_source_from_fetched_carries_metadata():
@@ -32,7 +37,8 @@ def test_source_from_fetched_carries_metadata():
         identifiers=[{"scheme": "doi", "value": "10.1/x"}],
         work_type=WorkType.article,
     )
-    sid = source_from_fetched(store, fetched)
+    sid, created = source_from_fetched(store, fetched)
+    assert created is True
     src = store.get_source(sid)
     assert src.local_identifier == "https://doi.org/10.1/x"
     assert src.full_text == "Abstrakt pracy."

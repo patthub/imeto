@@ -1,0 +1,9 @@
+{
+  "name": "report_noise",
+  "work_type": "report",
+  "text": "Niniejsze sprawozdanie przedstawia działalność Fundacji za rok 2025. W okresie sprawozdawczym zorganizowano 5 konferencji naukowych. Nasz zespół jest wysoce zaangażowany w realizację misji. W kolejnym roku planujemy uruchomić 3 nowe programy edukacyjne. Wydano recenzowaną publikację o zasięgu krajowym.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["zorganizowano 5 konferencji"]},
+    {"kind": "direct", "quote_substrings": ["Wydano recenzowaną publikację"]}
+  ]
+}

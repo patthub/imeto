@@ -1,0 +1,10 @@
+{
+  "name": "article_model",
+  "work_type": "article",
+  "text": "Model osiągnął dokładność 92% na zbiorze testowym, przewyższając metodę bazową, która uzyskała 85%. Badanie przeprowadzono na próbie 1200 pacjentów.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["dokładność 92%"]},
+    {"kind": "direct", "quote_substrings": ["1200 pacjentów", "próbie 1200"]},
+    {"kind": "inferred", "quote_substrings": ["92%", "85%"]}
+  ]
+}

@@ -117,6 +117,12 @@ class ProvenanceStore:
                 raise ValueError(f"nieznane source_id={source_id}")
             return src
 
+    def source_by_local_identifier(self, local_identifier: str) -> Source | None:
+        with Session(self.engine) as s:
+            return s.exec(
+                select(Source).where(Source.local_identifier == local_identifier)
+            ).first()
+
     # --- grunty (dosłowne kotwice) ---
 
     def add_evidence(

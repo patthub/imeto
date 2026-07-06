@@ -1,5 +1,6 @@
 """Pozyskanie źródła do bazy — z pliku lokalnego albo z API (FetchedWork).
-Zwraca `source_id`, na którym operuje potem `ExtractPhase`."""
+Zwraca `(source_id, created)`; import jest idempotentny po `local_identifier`
+(§6.4) — powtórny import tego samego źródła nie tworzy duplikatu."""
 
 from pathlib import Path
 
@@ -11,19 +12,27 @@ from imeto.worktypes import FABIO, WorkType
 
 def source_from_file(
     store: ProvenanceStore, path: str | Path, work_type: WorkType
-) -> int:
+) -> tuple[int, bool]:
+    local_id = str(path)
+    existing = store.source_by_local_identifier(local_id)
+    if existing is not None:
+        assert existing.id is not None
+        return existing.id, False
     text = parse_document(path)
-    return store.add_source(
-        Source(
-            local_identifier=str(path),
-            full_text=text,
-            fabio_type=FABIO[work_type],
-        )
+    sid = store.add_source(
+        Source(local_identifier=local_id, full_text=text, fabio_type=FABIO[work_type])
     )
+    return sid, True
 
 
-def source_from_fetched(store: ProvenanceStore, fetched: FetchedWork) -> int:
-    return store.add_source(
+def source_from_fetched(
+    store: ProvenanceStore, fetched: FetchedWork
+) -> tuple[int, bool]:
+    existing = store.source_by_local_identifier(fetched.local_identifier)
+    if existing is not None:
+        assert existing.id is not None
+        return existing.id, False
+    sid = store.add_source(
         Source(
             local_identifier=fetched.local_identifier,
             full_text=fetched.full_text,
@@ -33,3 +42,4 @@ def source_from_fetched(store: ProvenanceStore, fetched: FetchedWork) -> int:
             identifiers=fetched.identifiers,
         )
     )
+    return sid, True

@@ -51,6 +51,19 @@ def test_run_extracts_and_prints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert "uchwałę nr 12" in result.stdout
 
 
+def test_run_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    doc = _make_docx(tmp_path / "s.docx")
+    monkeypatch.setattr(settings, "db_url", f"sqlite:///{tmp_path}/t.db")  # trwała baza
+    monkeypatch.setattr("imeto.cli.LLMClient", FakeLLMClient)
+
+    r1 = runner.invoke(app, ["run", str(doc), "--type", "report"])
+    r2 = runner.invoke(app, ["run", str(doc), "--type", "report"])
+
+    assert r1.exit_code == 0 and r2.exit_code == 0
+    assert "1 faktów zapisanych" in r1.stdout
+    assert "już zaimportowane" in r2.stdout  # brak crasha, brak duplikatu
+
+
 def test_run_missing_file_errors():
     result = runner.invoke(app, ["run", "/nie/ma/takiego.docx"])
     assert result.exit_code != 0  # walidacja ścieżki przez Typer, bez dotykania modelu

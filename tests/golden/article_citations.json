@@ -1,0 +1,10 @@
+{
+  "name": "article_citations",
+  "work_type": "article",
+  "text": "W niniejszej pracy przedstawiono nową metodę segmentacji obrazów medycznych. Zaproponowany model osiągnął IoU 0.81 na zbiorze Cityscapes. Wcześniejsze badania (Kowalski, 2019) uzyskiwały jedynie 0.72. Metodę zwalidowano na 500 obrazach.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["nową metodę segmentacji obrazów"]},
+    {"kind": "direct", "quote_substrings": ["IoU 0.81"]},
+    {"kind": "direct", "quote_substrings": ["zwalidowano na 500 obrazach", "500 obrazach"]}
+  ]
+}

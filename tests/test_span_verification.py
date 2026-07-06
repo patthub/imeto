@@ -42,3 +42,22 @@ def test_surrounding_whitespace_in_quote_ignored():
 def test_returns_first_occurrence():
     span = find_span("ala ma ala", "ala")
     assert span == (0, 3)
+
+
+def test_typographic_quotes_folded():
+    # źródło ma cudzysłowy drukarskie, cytat proste — treść ta sama
+    src = 'Projekt „Szkoła bez barier” ruszył w 2025.'
+    span = find_span(src, 'Projekt "Szkoła bez barier" ruszył')
+    assert span is not None
+    # offset wskazuje ORYGINAŁ (z drukarskimi cudzysłowami)
+    assert src[span[0] : span[1]] == 'Projekt „Szkoła bez barier” ruszył'
+
+
+def test_dash_variants_folded():
+    src = "okres 2020—2025 był kluczowy"  # em-dash w źródle
+    assert find_span(src, "okres 2020-2025 był") is not None  # dywiz w cytacie
+
+
+def test_fold_is_symmetric():
+    # cytat z cudzysłowem drukarskim, źródło z prostym — też ma trafić
+    assert find_span('cel "X"', "cel „X”") is not None

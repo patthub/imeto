@@ -27,7 +27,7 @@ def extract_candidates(
 ) -> list[tuple[int, str]]:
     """Uruchamia ekstrakcję i zwraca listę (id_faktu, etykieta) kandydatów."""
     ctx = PhaseContext(store=store, llm=llm, skills=skills)
-    source_id = source_from_file(store, document, work_type)
+    source_id, _ = source_from_file(store, document, work_type)
     result = ExtractPhase(source_id, work_type).run(ctx)
     out: list[tuple[int, str]] = []
     for cid in result.produced:
