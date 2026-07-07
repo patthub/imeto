@@ -25,6 +25,20 @@ from imeto.worktypes import WorkType
 
 Candidates = list[tuple[int, str]]
 
+# Styl w duchu Notion: wąska kolumna, stonowana paleta, karty, systemowy font.
+NOTION_CSS = """
+.gradio-container { max-width: 820px !important; margin: 0 auto !important; }
+#imeto-header h1 { color:#37352f; font-weight:700; letter-spacing:-0.02em;
+  margin-bottom:0; }
+#imeto-header p { color:#787774; margin-top:2px; font-size:14px; }
+.imeto-card { border:1px solid #ecece9 !important; border-radius:12px !important;
+  background:#ffffff !important; padding:16px 18px !important;
+  box-shadow:0 1px 2px rgba(15,15,15,.03) !important; }
+.imeto-step { color:#9b9a97; font-size:11px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px; }
+button { border-radius:8px !important; }
+"""
+
 
 def _run_phase(
     store: ProvenanceStore,
@@ -232,63 +246,88 @@ def build_ui() -> Any:
         yield "\n".join(lines) if lines else "Nie znaleziono potwierdzeń w sieci."
 
     with gr.Blocks(title="IMeTo") as ui:
-        gr.Markdown("# IMeTo — fakty z pokryciem → ocena wg Kryterium III")
-        with gr.Row():
-            base_url = gr.Textbox(label="Adres modelu", value=settings.llm_base_url)
-            model = gr.Textbox(label="Model", value=settings.llm_model)
-        mode = gr.Radio(label="Źródło", choices=["Plik", "DOI", "URL"], value="Plik")
-        with gr.Row():
-            document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
-            work_type = gr.Dropdown(
-                label="Typ wytworu",
-                choices=[wt.value for wt in WorkType],
-                value=WorkType.report.value,
+        with gr.Column(elem_id="imeto-header"):
+            gr.Markdown("# IMeTo")
+            gr.Markdown(
+                "Fakty z pokryciem w źródle → potwierdzenia wpływu w sieci "
+                "→ ocena wg Kryterium III"
             )
-        with gr.Row():
-            doi = gr.Textbox(label="DOI", placeholder="10.1234/...")
-            url = gr.Textbox(label="URL", placeholder="https://...")
-            full_text = gr.Checkbox(label="Pełny tekst OA", value=False)
 
-        gr.Markdown("### 1. Fakty")
-        extract_btn = gr.Button("Wydobądź fakty", variant="primary")
-        candidates = gr.CheckboxGroup(label="Fakty (zaznacz do przyjęcia)", choices=[])
-        decide_btn = gr.Button("Zatwierdź zaznaczone fakty")
-        status = gr.Markdown()
+        with gr.Accordion("⚙️ Ustawienia modelu", open=False):
+            with gr.Row():
+                base_url = gr.Textbox(label="Adres modelu", value=settings.llm_base_url)
+                model = gr.Textbox(label="Model", value=settings.llm_model)
 
-        gr.Markdown("### 2. Potwierdzenia wpływu w sieci (nad zaakceptowanymi faktami)")
-        corroborate_btn = gr.Button("Potwierdź fakty w sieci")
-        corr_output = gr.Markdown()
+        stop_btn = gr.Button("⏹ Zatrzymaj", size="sm")
 
-        gr.Markdown("### 3. Ocena wg Kryterium III (nad zaakceptowanymi faktami)")
-        argue_btn = gr.Button("Oceń wg Kryterium III", variant="primary")
-        arguments = gr.CheckboxGroup(label="Argumenty (zaznacz)", choices=[])
-        decide_args_btn = gr.Button("Zatwierdź zaznaczone argumenty")
-        arg_status = gr.Markdown()
+        with gr.Group(elem_classes="imeto-card"):
+            gr.Markdown("Źródło", elem_classes="imeto-step")
+            mode = gr.Radio(
+                label="", choices=["Plik", "DOI", "URL"], value="Plik"
+            )
+            with gr.Row():
+                document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
+                work_type = gr.Dropdown(
+                    label="Typ wytworu",
+                    choices=[wt.value for wt in WorkType],
+                    value=WorkType.report.value,
+                )
+            with gr.Row():
+                doi = gr.Textbox(label="DOI", placeholder="10.1234/...")
+                url = gr.Textbox(label="URL", placeholder="https://...")
+                full_text = gr.Checkbox(label="Pełny tekst OA", value=False)
+
+        with gr.Group(elem_classes="imeto-card"):
+            gr.Markdown("Krok 1 · Fakty", elem_classes="imeto-step")
+            extract_btn = gr.Button("Wydobądź fakty", variant="primary")
+            candidates = gr.CheckboxGroup(label="Zaznacz do przyjęcia", choices=[])
+            decide_btn = gr.Button("Zatwierdź zaznaczone fakty")
+            status = gr.Markdown()
+
+        with gr.Group(elem_classes="imeto-card"):
+            gr.Markdown(
+                "Krok 2 · Potwierdzenia wpływu w sieci", elem_classes="imeto-step"
+            )
+            corroborate_btn = gr.Button("Potwierdź fakty w sieci")
+            corr_output = gr.Markdown()
+
+        with gr.Group(elem_classes="imeto-card"):
+            gr.Markdown("Krok 3 · Ocena wg Kryterium III", elem_classes="imeto-step")
+            argue_btn = gr.Button("Oceń wg Kryterium III", variant="primary")
+            arguments = gr.CheckboxGroup(label="Zaznacz do przyjęcia", choices=[])
+            decide_args_btn = gr.Button("Zatwierdź zaznaczone argumenty")
+            arg_status = gr.Markdown()
 
         source_id = gr.State(None)
         all_ids = gr.State([])
         arg_ids = gr.State([])
 
-        extract_btn.click(
+        ev_extract = extract_btn.click(
             on_extract,
             [mode, document, doi, url, full_text, work_type, base_url, model],
             [candidates, all_ids, source_id, status],
         )
         decide_btn.click(on_decide, [candidates, all_ids], [status])
-        argue_btn.click(
+        ev_argue = argue_btn.click(
             on_argue, [source_id, base_url, model], [arguments, arg_ids, arg_status]
         )
-        decide_args_btn.click(
-            on_decide_args, [arguments, arg_ids], [arg_status]
-        )
-        corroborate_btn.click(
+        decide_args_btn.click(on_decide_args, [arguments, arg_ids], [arg_status])
+        ev_corr = corroborate_btn.click(
             on_corroborate, [source_id, base_url, model], [corr_output]
         )
+        stop_btn.click(None, None, None, cancels=[ev_extract, ev_argue, ev_corr])
     return ui
 
 
 def launch() -> None:
-    build_ui().launch()
+    import gradio as gr
+
+    theme = gr.themes.Soft(
+        primary_hue="blue",
+        neutral_hue="gray",
+        font=["ui-sans-serif", "-apple-system", "Segoe UI", "sans-serif"],
+    )
+    build_ui().queue().launch(theme=theme, css=NOTION_CSS)
 
 
 if __name__ == "__main__":
