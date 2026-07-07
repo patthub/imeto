@@ -242,7 +242,11 @@ def build_ui() -> Any:
                 lines.append(f"    „{ev.quote}” — {src.local_identifier}")
         yield "\n".join(lines) if lines else "Nie znaleziono potwierdzeń w sieci."
 
-    with gr.Blocks(title="IMeTo") as ui:
+    force_light = (
+        "() => { if (!window.location.search.includes('__theme')) "
+        "{ window.location.search = '__theme=light'; } }"
+    )
+    with gr.Blocks(title="IMeTo", js=force_light) as ui:
         with gr.Column(elem_id="imeto-header"):
             gr.Markdown("# IMeTo")
             gr.Markdown(
@@ -260,7 +264,7 @@ def build_ui() -> Any:
         with gr.Group():
             gr.Markdown("Źródło", elem_classes="imeto-label")
             mode = gr.Radio(
-                label="", choices=["Plik", "DOI", "URL"], value="Plik"
+                choices=["Plik", "DOI", "URL"], value="Plik", show_label=False
             )
             with gr.Row():
                 document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
@@ -333,7 +337,10 @@ def _theme() -> Any:
         block_border_width="1px",
         block_shadow="0 1px 2px rgba(15,15,15,0.04)",
         block_label_text_color="#8a8a86",
-        block_title_text_color="#37352f",
+        block_label_background_fill="transparent",
+        block_title_text_color="#6b6b68",
+        block_title_background_fill="transparent",
+        checkbox_label_background_fill="#ffffff",
         input_background_fill="#ffffff",
         input_border_color="#e6e6e4",
         button_large_radius="10px",
