@@ -1,10 +1,12 @@
 from pathlib import Path
 
+import pytest
 from docx import Document
 
 from imeto.core.provenance import ProvenanceStore
+from imeto.ingest import sources
 from imeto.ingest.loaders import FetchedWork
-from imeto.ingest.sources import source_from_fetched, source_from_file
+from imeto.ingest.sources import source_from_fetched, source_from_file, source_from_url
 from imeto.worktypes import WorkType
 
 
@@ -44,3 +46,18 @@ def test_source_from_fetched_carries_metadata():
     assert src.full_text == "Abstrakt pracy."
     assert src.title == "Tytuł"
     assert src.identifiers == [{"scheme": "doi", "value": "10.1/x"}]
+
+
+def test_source_from_url(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        sources, "fetch_url_text", lambda url: "Wyniki wpłynęły na politykę."
+    )
+    store = ProvenanceStore()
+    sid, created = source_from_url(store, "https://gov.pl/raport", WorkType.report)
+    assert created is True
+    src = store.get_source(sid)
+    assert src.local_identifier == "https://gov.pl/raport"
+    assert src.full_text.startswith("Wyniki")
+
+    sid2, created2 = source_from_url(store, "https://gov.pl/raport", WorkType.report)
+    assert (sid2, created2) == (sid, False)  # idempotentne po url

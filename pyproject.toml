@@ -18,7 +18,8 @@ dependencies = [
 ui = ["gradio>=4.0"]
 api = ["fastapi>=0.115", "uvicorn>=0.30"]
 mcp = ["mcp>=1.2"]
-search = ["ddgs>=5"]  # wyszukiwanie dowodów wpływu (DuckDuckGo, bez klucza)
+# wyszukiwanie dowodów wpływu: DuckDuckGo (bez klucza) + trafilatura (HTML->tekst)
+search = ["ddgs>=5", "trafilatura>=1.6"]
 postgres = ["psycopg>=3.2", "alembic>=1.13"]
 embed = ["sentence-transformers>=3.0"]
 dev = ["pytest>=8.0", "respx>=0.21", "ruff>=0.6", "mypy>=1.11"]
@@ -44,7 +45,7 @@ python_version = "3.12"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["pdfplumber", "docx", "ddgs"]
+module = ["pdfplumber", "docx", "ddgs", "trafilatura"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -13,7 +13,11 @@ from imeto.ingest.loaders import (
     fetch_oa_fulltext,
     fetch_works_by_orcid,
 )
-from imeto.ingest.sources import source_from_fetched, source_from_file
+from imeto.ingest.sources import (
+    source_from_fetched,
+    source_from_file,
+    source_from_url,
+)
 from imeto.phases.argumenter import ArgumenterPhase
 from imeto.phases.base import PhaseContext
 from imeto.phases.extract import ExtractPhase
@@ -89,6 +93,7 @@ def run(
 def ingest(
     doi: str | None = typer.Option(None, "--doi", help="Pobierz wytwór po DOI"),
     orcid: str | None = typer.Option(None, "--orcid", help="Wypisz prace ORCID"),
+    url: str | None = typer.Option(None, "--url", help="Pobierz stronę WWW"),
     work_type: WorkType | None = typer.Option(
         None, "--type", "-t", help="Typ wytworu (wymagany dla --doi jeśli nieznany)"
     ),
@@ -96,7 +101,7 @@ def ingest(
         False, "--full-text", "-f", help="Pobierz pełny tekst OA (PDF), jeśli dostępny"
     ),
 ) -> None:
-    """Pobierz wytwór z API i wydobądź fakty (--doi), albo wypisz prace (--orcid)."""
+    """Pobierz źródło (--doi / --url) i wydobądź fakty, albo wypisz prace (--orcid)."""
     from dataclasses import replace
 
     if orcid:
@@ -106,8 +111,15 @@ def ingest(
             typer.echo(f"  {d}")
         typer.echo("Uruchom ekstrakcję: imeto ingest --doi <DOI> --type <typ>")
         return
+    if url:
+        if work_type is None:
+            raise typer.BadParameter("podaj --type dla --url")
+        store, ctx = _context()
+        source_id, created = source_from_url(store, url, work_type)
+        _extract_or_reuse(store, ctx, source_id, created, work_type)
+        return
     if not doi:
-        raise typer.BadParameter("podaj --doi albo --orcid")
+        raise typer.BadParameter("podaj --doi, --url albo --orcid")
 
     fetched = fetch_by_doi(doi, contact_email=settings.contact_email)
     if full_text and fetched.oa_pdf_url:

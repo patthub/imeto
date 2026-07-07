@@ -7,6 +7,7 @@ from pathlib import Path
 from imeto.core.provenance import ProvenanceStore, Source
 from imeto.ingest.loaders import FetchedWork
 from imeto.ingest.parsing import parse_document
+from imeto.ingest.web import fetch_url_text
 from imeto.worktypes import FABIO, WorkType
 
 
@@ -21,6 +22,23 @@ def source_from_file(
     text = parse_document(path)
     sid = store.add_source(
         Source(local_identifier=local_id, full_text=text, fabio_type=FABIO[work_type])
+    )
+    return sid, True
+
+
+def source_from_url(
+    store: ProvenanceStore, url: str, work_type: WorkType
+) -> tuple[int, bool]:
+    """Pobiera stronę WWW (dowód wpływu) i zapisuje jako źródło. Idempotentne po url."""
+    existing = store.source_by_local_identifier(url)
+    if existing is not None:
+        assert existing.id is not None
+        return existing.id, False
+    text = fetch_url_text(url)
+    if not text:
+        raise ValueError(f"nie udało się pobrać tekstu z {url}")
+    sid = store.add_source(
+        Source(local_identifier=url, full_text=text, fabio_type=FABIO[work_type])
     )
     return sid, True
 
