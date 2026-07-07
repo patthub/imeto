@@ -1,10 +1,12 @@
 import httpx
+import pytest
 import respx
 
 from imeto.ingest.loaders import (
     FetchedWork,
     _abstract_from_index,
     fetch_by_doi,
+    fetch_oa_fulltext,
     fetch_works_by_orcid,
 )
 from imeto.worktypes import WorkType
@@ -49,6 +51,51 @@ def test_fetch_by_doi_unknown_type_has_no_worktype():
     work = fetch_by_doi("https://doi.org/10.1/book")
     assert work.work_type is None  # człowiek musi wskazać typ
     assert work.fabio_type.endswith("Expression")  # fallback
+
+
+@respx.mock
+def test_fetch_by_doi_extracts_oa_pdf_url():
+    respx.get("https://api.openalex.org/works/doi:10.1/oa").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "title": "Praca OA",
+                "type": "article",
+                "open_access": {"is_oa": True, "oa_url": "https://x/paper.pdf"},
+                "best_oa_location": {"pdf_url": "https://x/best.pdf"},
+            },
+        )
+    )
+    w = fetch_by_doi("10.1/oa")
+    assert w.is_oa is True
+    assert w.oa_pdf_url == "https://x/best.pdf"  # best_oa_location ma pierwszeństwo
+
+
+@respx.mock
+def test_fetch_oa_fulltext_parses_pdf(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("imeto.ingest.loaders.parse_pdf_bytes", lambda b: "PEŁNY TEKST")
+    respx.get("https://x/best.pdf").mock(
+        return_value=httpx.Response(
+            200, content=b"%PDF-fake", headers={"content-type": "application/pdf"}
+        )
+    )
+    assert fetch_oa_fulltext("https://x/best.pdf") == "PEŁNY TEKST"
+
+
+@respx.mock
+def test_fetch_oa_fulltext_non_pdf_returns_none():
+    respx.get("https://x/landing").mock(
+        return_value=httpx.Response(
+            200, content=b"<html>", headers={"content-type": "text/html"}
+        )
+    )
+    assert fetch_oa_fulltext("https://x/landing") is None
+
+
+@respx.mock
+def test_fetch_oa_fulltext_http_error_returns_none():
+    respx.get("https://x/missing.pdf").mock(return_value=httpx.Response(404))
+    assert fetch_oa_fulltext("https://x/missing.pdf") is None
 
 
 @respx.mock

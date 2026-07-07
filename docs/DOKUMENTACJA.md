@@ -310,17 +310,19 @@ identyfikatorze. Podając **DOI** (numer publikacji), system ściąga z bazy Ope
 typ i **abstrakt**; podając **ORCID** (identyfikator badacza), dostajemy listę jego prac
 (ich numerów DOI), które potem można pojedynczo przetworzyć. Ważne ograniczenie wynika wprost
 z naszej zasady: skoro każdy fakt musi mieć dosłowne pokrycie w tekście, **wydobywamy fakty
-tylko z tekstu, który faktycznie mamy** — a z API to zwykle sam abstrakt, nie pełny artykuł.
-Pełny tekst pobieramy tylko wtedy, gdy jest otwarcie dostępny (Open Access) — to osobny,
-późniejszy krok.
+tylko z tekstu, który faktycznie mamy** — a z API domyślnie jest to abstrakt. Gdy praca jest
+otwarcie dostępna (Open Access), można **pobrać jej pełny tekst** (flaga `--full-text`):
+system ściąga PDF OA i parsuje go tak samo jak plik lokalny. Uwaga: pełny artykuł bywa bardzo
+długi (dziesiątki tysięcy znaków) i może przekroczyć okno kontekstu małego modelu — wtedy
+potrzebne będzie dzielenie tekstu na fragmenty (osobny, przyszły krok).
 
 **Technicznie:** `imeto/ingest/loaders.py` woła publiczne API (OpenAlex po DOI — odtwarza
-abstrakt z „odwróconego indeksu"; ORCID po liście prac). Pozyskanie źródła (z pliku albo z
-API) jest oddzielone od ekstrakcji: `imeto/ingest/sources.py` buduje i zapisuje `Source`, a
-`ExtractPhase` operuje już tylko na gotowym `source_id`. Dzięki temu ścieżka „z pliku" i „z
-API" korzystają z tego samego kodu ekstrakcji. W wierszu poleceń: `imeto ingest --doi <DOI>
---type <typ>` albo `imeto ingest --orcid <ORCID>`. Do „polite pool" API (grzeczniejsze
-limity) służy `CONTACT_EMAIL` w ustawieniach.
+abstrakt z „odwróconego indeksu", zwraca też `pdf_url` OA; ORCID po liście prac).
+`fetch_oa_fulltext` pobiera i parsuje PDF OA (a przy każdej porażce zwraca `None` i cofa się
+do abstraktu — nigdy nie przerywa). Pozyskanie źródła (z pliku albo z API) jest oddzielone od
+ekstrakcji: `imeto/ingest/sources.py` buduje `Source`, a `ExtractPhase` operuje na gotowym
+`source_id`. W wierszu poleceń: `imeto ingest --doi <DOI> --type <typ> [--full-text]` albo
+`imeto ingest --orcid <ORCID>`. Do „polite pool" API służy `CONTACT_EMAIL` w ustawieniach.
 
 ---
 
@@ -577,10 +579,12 @@ polecenie zgłosi czytelny komunikat „llm_model nie ustawiony" — to poprawne
 
 **Pobierz wytwór z internetu (zamiast pliku):**
 ```bash
-uv run imeto ingest --doi 10.1234/przyklad --type article   # po DOI (z abstraktu)
-uv run imeto ingest --orcid 0000-0002-1825-0097             # lista prac badacza
+uv run imeto ingest --doi 10.1234/przyklad --type article              # z abstraktu
+uv run imeto ingest --doi 10.1234/przyklad --type article --full-text  # pełny tekst OA
+uv run imeto ingest --orcid 0000-0002-1825-0097                        # lista prac badacza
 ```
-`--doi` ściąga metadane i abstrakt z OpenAlex i od razu wydobywa fakty; `--orcid` wypisuje
+`--doi` ściąga metadane i abstrakt z OpenAlex i od razu wydobywa fakty; `--full-text` dokłada
+pobranie pełnego tekstu Open Access (PDF), jeśli dostępny; `--orcid` wypisuje
 listę prac (DOI-ów) do dalszego przetworzenia. Uwaga: z API mamy zwykle sam abstrakt.
 
 ---
@@ -601,11 +605,12 @@ uv sync --extra ui          # doinstaluj Gradio (raz)
 uv run imeto ui             # otwórz interfejs w przeglądarce
 ```
 
-Następne kroki: **pobieranie pełnego tekstu Open Access** (na razie z API mamy sam abstrakt),
-kolejne typy wytworów, propozycje tropów, rozbiór argumentacyjny ZA/PRZECIW (relacje CiTO),
-asystent redakcyjny, eksport dossier (m.in. JSON-LD), mapa twierdzeń, golden set do pomiaru
-jakości. Warunkowo: „dyrygent" wielu faz (sekwencer), Postgres, prawdziwe API. Dotrenowanie
-modelu (fine-tuning) świadomie odłożone — najpierw prompty, few-shot w skillach i golden set.
+Następne kroki: **dzielenie długiego tekstu na fragmenty** (pełny artykuł OA przekracza okno
+kontekstu małego modelu), kolejne typy wytworów, propozycje tropów, rozbiór argumentacyjny
+ZA/PRZECIW (relacje CiTO), asystent redakcyjny, eksport dossier (m.in. JSON-LD), mapa
+twierdzeń. Warunkowo: „dyrygent" wielu faz (sekwencer), Postgres, prawdziwe API. Dotrenowanie
+modelu (fine-tuning) świadomie odłożone — najpierw prompty, few-shot w skillach i golden set
+(mamy: recall 0.98 / precyzja 0.97 / rodzaj 0.98 na 18 przypadkach).
 
 ---
 

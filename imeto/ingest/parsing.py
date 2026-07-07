@@ -4,6 +4,7 @@ Offsety cytatów (Evidence.start/end) to indeksy znaków w tym stringu — to sa
 na czym operuje `core.span.find_span`. Dlatego parser zwraca po prostu tekst;
 osobnej mapy pozycja→strona nie budujemy (§ POC: niepotrzebna warstwa)."""
 
+import io
 from pathlib import Path
 
 import pdfplumber
@@ -27,6 +28,11 @@ def _parse_docx(p: Path) -> str:
     return "\n".join(para.text for para in doc.paragraphs)
 
 
-def _parse_pdf(p: Path) -> str:
-    with pdfplumber.open(str(p)) as pdf:
+def parse_pdf_bytes(data: bytes) -> str:
+    """Parsuje PDF z bajtów (np. pobrany pełny tekst OA) — bez pliku tymczasowego."""
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
+
+
+def _parse_pdf(p: Path) -> str:
+    return parse_pdf_bytes(p.read_bytes())

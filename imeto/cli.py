@@ -8,7 +8,11 @@ import typer
 from imeto.config import settings
 from imeto.core.llm import LLMClient
 from imeto.core.provenance import ProvenanceStore
-from imeto.ingest.loaders import fetch_by_doi, fetch_works_by_orcid
+from imeto.ingest.loaders import (
+    fetch_by_doi,
+    fetch_oa_fulltext,
+    fetch_works_by_orcid,
+)
 from imeto.ingest.sources import source_from_fetched, source_from_file
 from imeto.phases.base import PhaseContext
 from imeto.phases.extract import ExtractPhase
@@ -86,8 +90,13 @@ def ingest(
     work_type: WorkType | None = typer.Option(
         None, "--type", "-t", help="Typ wytworu (wymagany dla --doi jeśli nieznany)"
     ),
+    full_text: bool = typer.Option(
+        False, "--full-text", "-f", help="Pobierz pełny tekst OA (PDF), jeśli dostępny"
+    ),
 ) -> None:
     """Pobierz wytwór z API i wydobądź fakty (--doi), albo wypisz prace (--orcid)."""
+    from dataclasses import replace
+
     if orcid:
         dois = fetch_works_by_orcid(orcid)
         typer.echo(f"Prace ORCID {orcid} ({len(dois)}):")
@@ -99,11 +108,21 @@ def ingest(
         raise typer.BadParameter("podaj --doi albo --orcid")
 
     fetched = fetch_by_doi(doi, contact_email=settings.contact_email)
+    if full_text and fetched.oa_pdf_url:
+        text = fetch_oa_fulltext(fetched.oa_pdf_url)
+        if text:
+            fetched = replace(fetched, full_text=text)
+            typer.echo(f"pobrano pełny tekst OA ({len(text)} znaków)")
+        else:
+            typer.echo("nie udało się pobrać pełnego tekstu OA — używam abstraktu")
+    elif full_text:
+        typer.echo("brak pełnego tekstu OA dla tego DOI — używam abstraktu")
+
     wt = work_type or fetched.work_type
     if wt is None:
         raise typer.BadParameter("nie rozpoznano typu wytworu — podaj --type")
     if not fetched.full_text:
-        typer.echo("Uwaga: brak abstraktu z API — nie ma z czego wydobywać faktów.")
+        typer.echo("Uwaga: brak tekstu z API — nie ma z czego wydobywać faktów.")
     store, ctx = _context()
     source_id, created = source_from_fetched(store, fetched)
     _extract_or_reuse(store, ctx, source_id, created, wt)

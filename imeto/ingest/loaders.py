@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from imeto.ingest.parsing import parse_pdf_bytes
 from imeto.worktypes import FABIO, WorkType
 
 OPENALEX = "https://api.openalex.org"
@@ -37,6 +38,8 @@ class FetchedWork:
     identifiers: list[dict[str, str]] = field(default_factory=list)
     # najlepsze dopasowanie typu do skillu ekstrakcji; None = człowiek musi wskazać
     work_type: WorkType | None = None
+    is_oa: bool = False
+    oa_pdf_url: str | None = None  # pełny tekst OA (PDF), jeśli dostępny
 
 
 def _abstract_from_index(index: dict[str, list[int]] | None) -> str:
@@ -84,6 +87,9 @@ def fetch_by_doi(
     fabio = FABIO[wt] if wt is not None else _FABIO_FALLBACK
     ids = work.get("ids") or {}
     identifiers = [{"scheme": k, "value": str(v)} for k, v in ids.items()]
+    oa = work.get("open_access") or {}
+    best = work.get("best_oa_location") or {}
+    pdf_url = best.get("pdf_url") or oa.get("oa_url")
 
     return FetchedWork(
         local_identifier=f"https://doi.org/{doi_clean}",
@@ -93,7 +99,32 @@ def fetch_by_doi(
         language=work.get("language"),
         identifiers=identifiers,
         work_type=wt,
+        is_oa=bool(oa.get("is_oa")),
+        oa_pdf_url=pdf_url,
     )
+
+
+def fetch_oa_fulltext(
+    pdf_url: str, *, client: httpx.Client | None = None
+) -> str | None:
+    """Pobiera i parsuje pełny tekst OA (PDF). Zwraca None, gdy się nie uda —
+    wtedy dzwoniący korzysta z abstraktu. Tylko PDF (HTML/landing poza zakresem)."""
+    own = client is None
+    c = client or httpx.Client(timeout=60.0, follow_redirects=True)
+    try:
+        resp = c.get(pdf_url)
+        resp.raise_for_status()
+        ctype = resp.headers.get("content-type", "").lower()
+        if "pdf" not in ctype and not pdf_url.lower().endswith(".pdf"):
+            return None
+        return parse_pdf_bytes(resp.content)
+    except Exception:
+        # ponytail: OA PDF-y bywają zawodne (redirecty, zepsute pliki) —
+        #           każda porażka -> None, fallback do abstraktu, nigdy crash.
+        return None
+    finally:
+        if own:
+            c.close()
 
 
 def fetch_works_by_orcid(
