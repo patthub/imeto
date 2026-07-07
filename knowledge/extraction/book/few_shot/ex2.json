@@ -1,0 +1,10 @@
+{
+  "fragment": "Autor dowodzi, że migracje zarobkowe trwale zmieniły strukturę wsi. Zagadnienie omówiono szerzej w rozdziale piątym. Książka zawiera obszerny indeks nazwisk.",
+  "facts": [
+    {
+      "statement": "Autor twierdzi, że migracje zarobkowe zmieniły strukturę wsi.",
+      "kind": "direct",
+      "quotes": ["migracje zarobkowe trwale zmieniły strukturę wsi"]
+    }
+  ]
+}

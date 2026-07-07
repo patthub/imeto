@@ -19,8 +19,14 @@ tez, ustaleń i wkładu, nie streszczaj rozdziałów.
 - wynik analizy, dane, przykład ilustrujący twierdzenie,
 - deklarowany wkład lub zakres pracy.
 
-Czym fakt NIE jest: streszczenie fabuły/struktury, zapowiedzi ("w rozdziale 3
-omówimy"), cudze poglądy przytoczone jako tło.
+Czym fakt NIE jest: cudze poglądy przytoczone jako tło.
+
+## KLUCZOWA ZASADA (o treści, nie o książce)
+
+Fakt dotyczy TREŚCI (teza, ustalenie, pojęcie, wynik) — NIE samej książki jako
+przedmiotu. NIE są faktami zdania o: strukturze ("omówiono w rozdziale trzecim",
+"w kolejnym rozdziale"), formie ("liczy 340 stron", "zawiera bibliografię/indeks"),
+adresacie ("adresowana do..."), wydawcy czy nakładzie. Pomijaj je.
 
 ## direct vs inferred
 

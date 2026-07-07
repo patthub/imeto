@@ -19,7 +19,13 @@ tekst bywa w równoważnikach zdań; trzymaj się dosłownego brzmienia w cytata
 - kluczowa liczba (próba, efekt),
 - wniosek końcowy.
 
-Czym fakt NIE jest: nagłówki sekcji ("Wyniki", "Metody"), afiliacje, podziękowania.
+Czym fakt NIE jest: nagłówki sekcji ("Wyniki", "Metody").
+
+## KLUCZOWA ZASADA (o wyniku, nie o posterze)
+
+Fakt to ustalenie merytoryczne. NIE są faktami zdania o obsłudze pracy: informacje
+o finansowaniu ("sfinansowano ze środków...", "grant NCN"), afiliacje, podziękowania,
+dane kontaktowe, miejsce/data prezentacji. Pomijaj je.
 
 ## direct vs inferred
 

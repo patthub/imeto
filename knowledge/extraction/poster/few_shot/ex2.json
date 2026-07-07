@@ -1,0 +1,10 @@
+{
+  "fragment": "Wynik: czułość testu wyniosła 95%. Badania sfinansowano z grantu NCN. Kontakt: lab@example.pl",
+  "facts": [
+    {
+      "statement": "Czułość testu wyniosła 95%.",
+      "kind": "direct",
+      "quotes": ["czułość testu wyniosła 95%"]
+    }
+  ]
+}
