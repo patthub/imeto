@@ -191,6 +191,21 @@ def evaluate(
 
 
 @app.command()
+def search(
+    query: str = typer.Argument(..., help="Zapytanie — szukaj dowodów wpływu"),
+    limit: int = typer.Option(8, "--limit", "-n", help="Liczba kandydatów"),
+) -> None:
+    """Wyszukaj w sieci kandydatów na dowody (człowiek decyduje, co jest dowodem)."""
+    from imeto.tools.web_search import web_search
+
+    for r in web_search(query, max_results=limit):
+        typer.echo(f"• {r.title}")
+        typer.echo(f"  {r.url}")
+        if r.snippet:
+            typer.echo(f"  {r.snippet[:160]}")
+
+
+@app.command()
 def ui() -> None:
     """Uruchom interfejs Gradio (próg człowieka: akceptuj/odrzuć kandydatów)."""
     from imeto.ui.app import launch  # lazy: Gradio ciągniemy tylko przy uruchomieniu UI
