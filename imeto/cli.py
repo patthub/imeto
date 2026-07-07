@@ -115,7 +115,11 @@ def ingest(
         if work_type is None:
             raise typer.BadParameter("podaj --type dla --url")
         store, ctx = _context()
-        source_id, created = source_from_url(store, url, work_type)
+        try:
+            source_id, created = source_from_url(store, url, work_type)
+        except ValueError as e:
+            typer.echo(str(e))  # martwy/zablokowany link — czytelnie, bez traceback
+            raise typer.Exit(1) from e
         _extract_or_reuse(store, ctx, source_id, created, work_type)
         return
     if not doi:
