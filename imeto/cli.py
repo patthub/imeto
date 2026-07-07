@@ -14,6 +14,7 @@ from imeto.ingest.loaders import (
     fetch_works_by_orcid,
 )
 from imeto.ingest.sources import source_from_fetched, source_from_file
+from imeto.phases.argumenter import ArgumenterPhase
 from imeto.phases.base import PhaseContext
 from imeto.phases.extract import ExtractPhase
 from imeto.registries.skills import SkillRegistry
@@ -127,6 +128,26 @@ def ingest(
     store, ctx = _context()
     source_id, created = source_from_fetched(store, fetched)
     _extract_or_reuse(store, ctx, source_id, created, wt)
+
+
+@app.command()
+def argue(
+    source_id: int = typer.Argument(..., help="id źródła (z imeto run/ingest)"),
+    criterion: str = typer.Option("kryterium_iii", "--criterion", "-c"),
+    status: str = typer.Option(
+        "accepted", "--status", help="fakty: accepted | candidate | all"
+    ),
+) -> None:
+    """Zbuduj argumenty ZA/PRZECIW/LUKI wg rubryki dla faktów źródła."""
+    store, ctx = _context()
+    claim_status = None if status == "all" else status
+    result = ArgumenterPhase(source_id, criterion, claim_status).run(ctx)
+    typer.echo(result.summary)
+    for aid in result.produced:
+        arg = store.get_argument(aid)
+        typer.echo(f"  [{aid}] {arg.side.upper()}: {arg.statement}")
+        for claim in store.claims_for_argument(aid):
+            typer.echo(f"      ← {claim.statement}")
 
 
 @app.command("eval")

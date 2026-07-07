@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from imeto.core.schemas import Extraction
+from imeto.core.schemas import Argumentation, Extraction
 
 
 def _fact(**kw: object) -> dict:
@@ -51,3 +51,18 @@ def test_invalid_kind_rejected():
 def test_blank_quote_rejected():
     with pytest.raises(ValidationError):
         Extraction.model_validate(_fact(quotes=["   "]))
+
+
+def test_argumentation_parses():
+    a = Argumentation.model_validate(
+        {"arguments": [{"side": "za", "statement": "arg", "based_on": [1, 2]}]}
+    )
+    assert a.arguments[0].side == "za"
+    assert a.arguments[0].based_on == [1, 2]
+
+
+def test_argument_invalid_side_rejected():
+    with pytest.raises(ValidationError):
+        Argumentation.model_validate(
+            {"arguments": [{"side": "moze", "statement": "x", "based_on": []}]}
+        )

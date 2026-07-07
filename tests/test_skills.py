@@ -71,3 +71,18 @@ def test_real_skills_present():
         loaded = reg.load(wt.value)
         assert "## Rola" in loaded
         assert "## Przykłady" in loaded
+
+
+def test_loads_criterion_from_subdir(tmp_path: Path):
+    d = tmp_path / "criteria" / "kryterium_iii"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("## Rubryka\ntreść", encoding="utf-8")
+    assert SkillRegistry(tmp_path).load("kryterium_iii", subdir="criteria").startswith(
+        "## Rubryka"
+    )
+
+
+def test_real_criterion_present():
+    reg = SkillRegistry("knowledge")
+    rubric = reg.load("kryterium_iii", subdir="criteria")
+    assert "wpływ" in rubric.lower()

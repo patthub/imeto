@@ -1,9 +1,10 @@
 """SkillRegistry — warstwa 4: wiedza dziedzinowa jako DANE, nie kod.
 
-Format Agent Skills: każdy skill to katalog `knowledge/extraction/<typ>/` z plikiem
-`SKILL.md` (frontmatter YAML + instrukcje) i opcjonalnym `few_shot/*.json` (przykłady).
-`load()` składa fragment promptu: treść SKILL.md (bez frontmatteru) + wyrenderowane
-przykłady. Ekspert stroi ekstrakcję per typ, nie dotykając Pythona."""
+Format Agent Skills: skill to katalog `knowledge/<subdir>/<nazwa>/` z plikiem `SKILL.md`
+(frontmatter YAML + instrukcje) i opcjonalnym `few_shot/*.json`. `subdir` = rodzaj:
+"extraction" (co jest faktem w danym typie wytworu) albo "criteria" (rubryki oceny, np.
+Kryterium III). `load()` składa fragment promptu: treść SKILL.md (bez frontmatteru) +
+wyrenderowane przykłady. Ekspert stroi wiedzę, nie dotykając Pythona."""
 
 import json
 from pathlib import Path
@@ -20,23 +21,22 @@ def _strip_frontmatter(text: str) -> str:
 
 class SkillRegistry:
     def __init__(self, knowledge_dir: str | Path = "knowledge") -> None:
-        self._dir = Path(knowledge_dir) / "extraction"
+        self._base = Path(knowledge_dir)
 
-    def load(self, name: str) -> str:
-        skill_dir = self._dir / name
+    def load(self, name: str, subdir: str = "extraction") -> str:
+        skill_dir = self._base / subdir / name
         skill_md = skill_dir / "SKILL.md"
         if not skill_md.exists():
-            raise ValueError(f"brak skillu '{name}' ({skill_md})")
+            raise ValueError(f"brak skillu '{name}' w '{subdir}' ({skill_md})")
         body = _strip_frontmatter(skill_md.read_text(encoding="utf-8")).strip()
         examples = self._render_few_shot(skill_dir / "few_shot")
         return f"{body}\n\n## Przykłady\n{examples}" if examples else body
 
-    def list(self) -> list[str]:
-        if not self._dir.exists():
+    def list(self, subdir: str = "extraction") -> list[str]:
+        d = self._base / subdir
+        if not d.exists():
             return []
-        return sorted(
-            p.name for p in self._dir.iterdir() if (p / "SKILL.md").exists()
-        )
+        return sorted(p.name for p in d.iterdir() if (p / "SKILL.md").exists())
 
     def _render_few_shot(self, few_shot_dir: Path) -> str:
         if not few_shot_dir.exists():

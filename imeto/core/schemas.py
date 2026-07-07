@@ -29,3 +29,21 @@ class Extraction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     facts: list[ExtractedFact]
+
+
+# za — fakt wspiera spełnienie kryterium; przeciw — podważa; luka — istotny brak.
+ArgSide = Literal["za", "przeciw", "luka"]
+
+
+class ProposedArgument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    side: ArgSide
+    statement: NonBlank  # argument własnymi słowami
+    based_on: list[int]  # numery FAKTÓW (1-based), na których argument się opiera
+
+
+class Argumentation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    arguments: list[ProposedArgument]

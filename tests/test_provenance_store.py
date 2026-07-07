@@ -106,3 +106,27 @@ def test_verify_span_audit():
     sid = add_src(store)
     eid = store.add_evidence(sid, "uchwałę nr 12")
     assert store.verify_span(sid, eid) is True
+
+
+def test_argument_links_claims_and_gate():
+    store = make_store()
+    sid = add_src(store)
+    e = store.add_evidence(sid, "uchwałę nr 12")
+    c1 = store.add_claim(sid, "fakt a", "direct", [e])
+    c2 = store.add_claim(sid, "fakt b", "direct", [e])
+
+    aid = store.add_argument(sid, "kryterium_iii", "za", "argument", [c1, c2])
+    assert store.get_argument(aid).side == "za"
+    assert {c.id for c in store.claims_for_argument(aid)} == {c1, c2}
+
+    store.accept_argument(aid, by="ekspert")
+    arg = store.get_argument(aid)
+    assert arg.status == "accepted" and arg.approved_by == "ekspert"
+    assert len(store.arguments_for_source(sid, status="accepted")) == 1
+
+
+def test_argument_may_have_no_claims_for_gap():
+    store = make_store()
+    sid = add_src(store)
+    aid = store.add_argument(sid, "kryterium_iii", "luka", "brak dowodu", [])
+    assert store.claims_for_argument(aid) == []

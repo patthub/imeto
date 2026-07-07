@@ -79,6 +79,31 @@ class ClaimEvidence(SQLModel, table=True):
     evidence_id: int = Field(foreign_key="evidence.id", primary_key=True)
 
 
+class Argument(SQLModel, table=True):
+    """Argument oceny wg rubryki (ZA/PRZECIW/LUKA). prov:Entity, prov:wasDerivedFrom
+    faktów, na których się opiera (przez ArgumentClaim). Struktura równoległa do Claim
+    o poziom wyżej: argument opiera się na faktach, jak fakt na gruntach."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    source_id: int = Field(foreign_key="source.id", index=True)
+    criterion: str  # rubryka, np. "kryterium_iii"
+    side: str  # za | przeciw | luka
+    statement: str
+    generated_at_time: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    generated_by_activity: str | None = None
+    attributed_to_agent: str | None = None
+    status: str = "candidate"  # candidate | accepted | rejected
+    approved_by: str | None = None
+    decided_at: datetime | None = None
+
+
+class ArgumentClaim(SQLModel, table=True):
+    """Powiązanie N:M argument↔fakt (prov:wasDerivedFrom)."""
+
+    argument_id: int = Field(foreign_key="argument.id", primary_key=True)
+    claim_id: int = Field(foreign_key="claim.id", primary_key=True)
+
+
 class SpanNotVerified(ValueError):
     """Cytat nie występuje dosłownie w źródle — grunt odrzucony (SAD §8.2)."""
 
@@ -246,6 +271,83 @@ class ProvenanceStore:
     def reject_claim(self, claim_id: int, by: str | None = None) -> None:
         """Próg: człowiek odrzuca fakt (prov:wasInvalidatedBy)."""
         self._decide(claim_id, "rejected", by)
+
+    # --- argumenty (ocena wg rubryki) ---
+
+    def add_argument(
+        self,
+        source_id: int,
+        criterion: str,
+        side: str,
+        statement: str,
+        claim_ids: list[int],
+        *,
+        activity: str | None = None,
+        agent: str | None = None,
+    ) -> int:
+        """Tworzy argument powiązany z faktami, na których się opiera. Lista faktów
+        może być pusta tylko dla 'luka' (brak) — to kontroluje faza, nie store."""
+        with Session(self.engine) as s:
+            arg = Argument(
+                source_id=source_id,
+                criterion=criterion,
+                side=side,
+                statement=statement,
+                generated_by_activity=activity,
+                attributed_to_agent=agent,
+            )
+            s.add(arg)
+            s.commit()
+            s.refresh(arg)
+            assert arg.id is not None
+            for cid in claim_ids:
+                s.add(ArgumentClaim(argument_id=arg.id, claim_id=cid))
+            s.commit()
+            return arg.id
+
+    def get_argument(self, argument_id: int) -> Argument:
+        with Session(self.engine) as s:
+            arg = s.get(Argument, argument_id)
+            if arg is None:
+                raise ValueError(f"nieznane argument_id={argument_id}")
+            return arg
+
+    def arguments_for_source(
+        self, source_id: int, criterion: str | None = None, status: str | None = None
+    ) -> list[Argument]:
+        stmt = select(Argument).where(Argument.source_id == source_id)
+        if criterion is not None:
+            stmt = stmt.where(Argument.criterion == criterion)
+        if status is not None:
+            stmt = stmt.where(Argument.status == status)
+        with Session(self.engine) as s:
+            return list(s.exec(stmt))
+
+    def claims_for_argument(self, argument_id: int) -> list[Claim]:
+        stmt = (
+            select(Claim)
+            .join(ArgumentClaim, ArgumentClaim.claim_id == Claim.id)  # type: ignore[arg-type]
+            .where(ArgumentClaim.argument_id == argument_id)
+        )
+        with Session(self.engine) as s:
+            return list(s.exec(stmt))
+
+    def _decide_argument(self, argument_id: int, status: str, by: str | None) -> None:
+        with Session(self.engine) as s:
+            arg = s.get(Argument, argument_id)
+            if arg is None:
+                raise ValueError(f"nieznane argument_id={argument_id}")
+            arg.status = status
+            arg.approved_by = by
+            arg.decided_at = datetime.now(UTC)
+            s.add(arg)
+            s.commit()
+
+    def accept_argument(self, argument_id: int, by: str | None = None) -> None:
+        self._decide_argument(argument_id, "accepted", by)
+
+    def reject_argument(self, argument_id: int, by: str | None = None) -> None:
+        self._decide_argument(argument_id, "rejected", by)
 
     # --- audyt ---
 
