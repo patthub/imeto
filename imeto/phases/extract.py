@@ -67,8 +67,14 @@ class ExtractPhase:
         # ponytail: koszt = 1 wywołanie modelu na fragment; przy bardzo długich
         #           tekstach dołożyć limit/próbkowanie, gdy przebiegi staną się drogie.
         raw: list[ExtractedFact] = []
+        failed_chunks = 0
         for chunk in chunks:
-            raw.extend(ctx.llm.structured(system, chunk, Extraction).facts)
+            try:
+                raw.extend(ctx.llm.structured(system, chunk, Extraction).facts)
+            except Exception:
+                # ponytail: pojedynczy fragment (blip sieci/modelu) nie może zabić
+                #           całej ekstrakcji — zliczamy i idziemy dalej.
+                failed_chunks += 1
         facts = _dedup_facts(raw)
 
         activity = f"extract:{self.source_id}"
@@ -101,6 +107,7 @@ class ExtractPhase:
             produced.append(claim_id)
 
         frag = f", {len(chunks)} fragmentów" if len(chunks) > 1 else ""
+        frag += f" ({failed_chunks} nieudanych)" if failed_chunks else ""
         summary = (
             f"źródło {self.source_id}: {len(produced)} faktów zapisanych "
             f"({partial} częściowych), {ungrounded} odrzuconych (bez pokrycia){frag}"

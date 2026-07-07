@@ -149,3 +149,36 @@ def test_extract_over_chunks_collects_facts_from_all(tmp_path: Path):
     quotes = {ev.quote for c in claims for ev in store.evidence_for_claim(c.id)}
     assert "ALFA fakt pierwszy" in quotes
     assert "BETA fakt drugi" in quotes
+
+
+class FailingChunkLLM:
+    """Rzuca wyjątkiem dla fragmentu z FAILHERE, zwraca fakt dla fragmentu z GOOD."""
+
+    model = "fake"
+
+    def structured(
+        self, system: str, user: str, schema: type[Extraction]
+    ) -> Extraction:
+        if "FAILHERE" in user:
+            raise RuntimeError("symulowana awaria fragmentu")
+        if "GOOD fakt" in user:
+            fact = ExtractedFact(statement="ok", kind="direct", quotes=["GOOD fakt"])
+            return Extraction(facts=[fact])
+        return Extraction(facts=[])
+
+
+def test_chunk_failure_does_not_lose_other_facts(tmp_path: Path):
+    filler = "wypełnienie linii tekstu.\n" * 30
+    text = "GOOD fakt tutaj.\n" + filler + "FAILHERE koniec."
+    store = ProvenanceStore()
+    sid = store.add_source(Source(local_identifier="d", full_text=text))
+    ctx = PhaseContext(
+        store=store,
+        llm=FailingChunkLLM(),  # type: ignore[arg-type]
+        skills=_skills(tmp_path),
+    )
+
+    result = ExtractPhase(sid, WorkType.report, chunk_chars=100).run(ctx)
+
+    assert len(store.claims_for_source(sid)) == 1  # fakt z dobrego fragmentu ocalał
+    assert "nieudanych" in result.summary

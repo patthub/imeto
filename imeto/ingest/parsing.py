@@ -28,10 +28,19 @@ def _parse_docx(p: Path) -> str:
     return "\n".join(para.text for para in doc.paragraphs)
 
 
-def parse_pdf_bytes(data: bytes) -> str:
+# x_tolerance=1 (zamiast domyślnych 3) rozdziela słowa w ciasno justowanym tekście
+# naukowym — inaczej pdfplumber skleja słowa ("0.21phenotypicdimensions"), co psuje
+# weryfikację cytatu. ponytail: knob strojenia; jeśli PDF-y naukowe zaczną wymagać
+# odczytu kolumn/tabel, dopiero wtedy SOTA (GROBID/docling), nie wcześniej.
+PDF_X_TOLERANCE = 1.0
+
+
+def parse_pdf_bytes(data: bytes, x_tolerance: float = PDF_X_TOLERANCE) -> str:
     """Parsuje PDF z bajtów (np. pobrany pełny tekst OA) — bez pliku tymczasowego."""
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        return "\n".join(page.extract_text() or "" for page in pdf.pages)
+        return "\n".join(
+            page.extract_text(x_tolerance=x_tolerance) or "" for page in pdf.pages
+        )
 
 
 def _parse_pdf(p: Path) -> str:
