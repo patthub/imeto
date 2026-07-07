@@ -202,11 +202,34 @@ def build_ui() -> Any:
         acc, rej = apply_argument_decisions(store, all_ids, selected)
         return f"Zaakceptowano {acc} argumentów, odrzucono {rej}."
 
+    def on_search(query):  # type: ignore[no-untyped-def]
+        if not query.strip():
+            return gr.update(choices=[]), "Podaj zapytanie."
+        try:
+            from imeto.tools.web_search import web_search
+
+            res = web_search(query.strip(), max_results=8)
+        except Exception as e:  # noqa: BLE001
+            return gr.update(choices=[]), f"Błąd wyszukiwania: {e}"
+        choices = [(f"{r.title[:70]} — {r.url}", r.url) for r in res]
+        return gr.update(choices=choices), f"Znaleziono {len(choices)} — wybierz wynik."
+
+    def on_pick(picked_url):  # type: ignore[no-untyped-def]
+        if not picked_url:
+            return gr.update(), gr.update()
+        return picked_url, "URL"  # wstaw URL i przełącz źródło na URL
+
     with gr.Blocks(title="IMeTo") as ui:
         gr.Markdown("# IMeTo — fakty z pokryciem → ocena wg Kryterium III")
         with gr.Row():
             base_url = gr.Textbox(label="Adres modelu", value=settings.llm_base_url)
             model = gr.Textbox(label="Model", value=settings.llm_model)
+        gr.Markdown("### Szukaj dowodów w sieci (opcjonalnie)")
+        with gr.Row():
+            search_query = gr.Textbox(label="Zapytanie", placeholder="np. wpływ badań…")
+            search_btn = gr.Button("Szukaj w sieci")
+        results = gr.Radio(label="Wyniki (wybierz → wstawi URL)", choices=[])
+
         mode = gr.Radio(label="Źródło", choices=["Plik", "DOI", "URL"], value="Plik")
         with gr.Row():
             document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
@@ -248,6 +271,8 @@ def build_ui() -> Any:
         decide_args_btn.click(
             on_decide_args, [arguments, arg_ids], [arg_status]
         )
+        search_btn.click(on_search, [search_query], [results, status])
+        results.change(on_pick, [results], [url, mode])
     return ui
 
 
