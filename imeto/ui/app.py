@@ -18,7 +18,7 @@ from imeto.ingest.sources import (
 )
 from imeto.phases.argumenter import ArgumenterPhase
 from imeto.phases.base import PhaseContext
-from imeto.phases.corroborate import CorroboratePhase
+from imeto.phases.corroborate import corroborate_one
 from imeto.phases.extract import ExtractPhase
 from imeto.registries.skills import SkillRegistry
 from imeto.worktypes import WorkType
@@ -133,26 +133,6 @@ def apply_argument_decisions(
     return len(accepted), len(all_ids) - len(accepted)
 
 
-def corroborate_facts(
-    store: ProvenanceStore, skills: SkillRegistry, source_id: int, llm: LLMClient
-) -> str:
-    """Szuka w sieci potwierdzeń wpływu zaakceptowanych faktów i zwraca markdown
-    z wynikami (fakt → potwierdzenie zewnętrzne + źródło)."""
-    ctx = PhaseContext(store=store, llm=llm, skills=skills)
-    CorroboratePhase(source_id).run(ctx)
-    lines: list[str] = []
-    for claim in store.claims_for_source(source_id, status="accepted"):
-        assert claim.id is not None
-        evs = store.evidence_for_claim(claim.id)
-        ext = [e for e in evs if e.source_id != source_id]
-        if ext:
-            lines.append(f"**{claim.statement}**")
-            for e in ext:
-                src = store.get_source(e.source_id)
-                lines.append(f"  - ✓ „{e.quote}” — {src.local_identifier}")
-    return "\n".join(lines) if lines else "Nie znaleziono potwierdzeń w sieci."
-
-
 def build_ui() -> Any:
     import gradio as gr
 
@@ -225,13 +205,31 @@ def build_ui() -> Any:
 
     def on_corroborate(source_id, base_url, model):  # type: ignore[no-untyped-def]
         if not source_id:
-            return "Najpierw wydobądź i zatwierdź fakty."
-        try:
-            return corroborate_facts(
-                store, skills, int(source_id), _llm(base_url, model)
-            )
-        except Exception as e:  # noqa: BLE001
-            return f"Błąd: {e}"
+            yield "Najpierw wydobądź i zatwierdź fakty."
+            return
+        claims = store.claims_for_source(int(source_id), status="accepted")
+        if not claims:
+            yield "Brak zatwierdzonych faktów — najpierw zatwierdź fakty w sekcji 1."
+            return
+        llm = _llm(base_url, model)
+        activity = f"corroborate:{source_id}"
+        lines: list[str] = []
+        for i, claim in enumerate(claims, 1):
+            prog = f"⏳ Sprawdzam {i}/{len(claims)}: {claim.statement[:70]}…"
+            yield "\n".join([*lines, prog])
+            try:
+                eid = corroborate_one(
+                    store, llm, claim, activity=activity, agent=llm.model
+                )
+            except Exception as e:  # noqa: BLE001
+                yield "\n".join([*lines, f"⚠️ błąd przy fakcie {i}: {e}"])
+                continue
+            if eid is not None:
+                ev = store.get_evidence(eid)
+                src = store.get_source(ev.source_id)
+                lines.append(f"- ✅ **{claim.statement}**")
+                lines.append(f"    „{ev.quote}” — {src.local_identifier}")
+        yield "\n".join(lines) if lines else "Nie znaleziono potwierdzeń w sieci."
 
     with gr.Blocks(title="IMeTo") as ui:
         gr.Markdown("# IMeTo — fakty z pokryciem → ocena wg Kryterium III")

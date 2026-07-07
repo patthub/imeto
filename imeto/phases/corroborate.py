@@ -11,7 +11,8 @@ człowiek ocenia, które potwierdzenia liczą (Z1)."""
 
 from dataclasses import dataclass, field
 
-from imeto.core.provenance import Claim, SpanNotVerified
+from imeto.core.llm import LLMClient
+from imeto.core.provenance import Claim, ProvenanceStore, SpanNotVerified
 from imeto.core.schemas import Corroboration
 from imeto.ingest.sources import source_from_text
 from imeto.ingest.web import fetch_url_text
@@ -28,6 +29,41 @@ CORROBORATE_SYSTEM = (
     "pusty, gdy confirms=false.\n"
     "- Nie zmyślaj cytatu. Sama wzmianka o temacie bez potwierdzenia wpływu to false."
 )
+
+
+def corroborate_one(
+    store: ProvenanceStore,
+    llm: LLMClient,
+    claim: Claim,
+    *,
+    max_candidates: int = 3,
+    page_chars: int = 6000,
+    activity: str | None = None,
+    agent: str | None = None,
+) -> int | None:
+    """Szuka i kotwiczy potwierdzenie wpływu JEDNEGO faktu. Zwraca id dowodu-
+    potwierdzenia (zewnętrznego) albo None. Cytat musi być dosłowny na stronie."""
+    assert claim.id is not None
+    for cand in web_search(claim.statement, max_results=max_candidates):
+        text = fetch_url_text(cand.url)
+        if not text:
+            continue
+        user = (
+            f"FAKT: {claim.statement}\n\nSTRONA ({cand.url}):\n{text[:page_chars]}"
+        )
+        verdict = llm.structured(CORROBORATE_SYSTEM, user, Corroboration)
+        if not verdict.confirms or not verdict.quote.strip():
+            continue
+        ext_sid, _ = source_from_text(store, cand.url, text)
+        try:
+            ev = store.add_evidence(
+                ext_sid, verdict.quote, activity=activity, agent=agent
+            )
+        except SpanNotVerified:
+            continue  # LLM zmyślił cytat — odrzuć, próbuj kolejnego kandydata
+        store.link_evidence(claim.id, ev)
+        return ev
+    return None
 
 
 @dataclass
@@ -50,7 +86,11 @@ class CorroboratePhase:
         agent = ctx.llm.model
         produced: list[int] = []  # id dowodów-potwierdzeń
         for claim in claims:
-            eid = self._corroborate(ctx, claim, activity, agent)
+            eid = corroborate_one(
+                ctx.store, ctx.llm, claim,
+                max_candidates=self.max_candidates, page_chars=self.page_chars,
+                activity=activity, agent=agent,
+            )
             if eid is not None:
                 produced.append(eid)
         summary = (
@@ -60,29 +100,3 @@ class CorroboratePhase:
         return PhaseResult(
             ok=True, summary=summary, produced=produced, needs_human=True
         )
-
-    def _corroborate(
-        self, ctx: PhaseContext, claim: Claim, activity: str, agent: str
-    ) -> int | None:
-        assert claim.id is not None
-        for cand in web_search(claim.statement, max_results=self.max_candidates):
-            text = fetch_url_text(cand.url)
-            if not text:
-                continue
-            user = (
-                f"FAKT: {claim.statement}\n\n"
-                f"STRONA ({cand.url}):\n{text[: self.page_chars]}"
-            )
-            verdict = ctx.llm.structured(CORROBORATE_SYSTEM, user, Corroboration)
-            if not verdict.confirms or not verdict.quote.strip():
-                continue
-            ext_sid, _ = source_from_text(ctx.store, cand.url, text)
-            try:
-                ev = ctx.store.add_evidence(
-                    ext_sid, verdict.quote, activity=activity, agent=agent
-                )
-            except SpanNotVerified:
-                continue  # LLM zmyślił cytat — odrzuć, próbuj kolejnego kandydata
-            ctx.store.link_evidence(claim.id, ev)
-            return ev
-        return None

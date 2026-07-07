@@ -8,19 +8,15 @@ from docx import Document
 from imeto.core.provenance import ProvenanceStore, Source
 from imeto.core.schemas import (
     Argumentation,
-    Corroboration,
     ExtractedFact,
     Extraction,
     ProposedArgument,
 )
-from imeto.phases import corroborate as C
 from imeto.registries.skills import SkillRegistry
-from imeto.tools.web_search import SearchResult
 from imeto.ui.app import (
     apply_argument_decisions,
     apply_decisions,
     argue_candidates,
-    corroborate_facts,
     extract_candidates,
     extract_candidates_from_doi,
     extract_candidates_from_url,
@@ -135,26 +131,6 @@ def test_argue_over_accepted_facts(tmp_path: Path):
     acc, rej = apply_argument_decisions(store, [out[0][0]], [out[0][0]])
     assert (acc, rej) == (1, 0)
     assert store.get_argument(out[0][0]).status == "accepted"
-
-
-def test_corroborate_facts_display(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    hit = [SearchResult("t", "https://gov.pl/x", "s")]
-    monkeypatch.setattr(C, "web_search", lambda q, max_results=3: hit)
-    monkeypatch.setattr(C, "fetch_url_text", lambda url: "Pilotaż wdrożono oficjalnie.")
-    store = ProvenanceStore()
-    src = Source(local_identifier="doc", full_text="Opublikowano pilotaż.")
-    sid = store.add_source(src)
-    e = store.add_evidence(sid, "Opublikowano pilotaż")
-    c = store.add_claim(sid, "Opublikowano pilotaż.", "direct", [e])
-    store.accept_claim(c)
-
-    md = corroborate_facts(
-        store,
-        _skills(tmp_path),
-        sid,
-        FakeLLM(Corroboration(confirms=True, quote="Pilotaż wdrożono oficjalnie")),  # type: ignore[arg-type]
-    )
-    assert "gov.pl/x" in md and "Pilotaż wdrożono" in md
 
 
 def test_apply_decisions_accepts_selected_rejects_rest():
