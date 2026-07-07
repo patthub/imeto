@@ -27,7 +27,9 @@ Candidates = list[tuple[int, str]]
 
 # Styl w duchu Notion: wąska kolumna, stonowana paleta, karty, systemowy font.
 NOTION_CSS = """
-.gradio-container { max-width: 820px !important; margin: 0 auto !important; }
+.gradio-container { max-width: 820px !important; margin: 0 auto !important;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+  Helvetica, Arial, sans-serif !important; }
 #imeto-header h1 { color:#37352f; font-weight:700; letter-spacing:-0.02em;
   margin-bottom:0; }
 #imeto-header p { color:#787774; margin-top:2px; font-size:14px; }
@@ -322,11 +324,7 @@ def build_ui() -> Any:
 def launch() -> None:
     import gradio as gr
 
-    theme = gr.themes.Soft(
-        primary_hue="blue",
-        neutral_hue="gray",
-        font=["ui-sans-serif", "-apple-system", "Segoe UI", "sans-serif"],
-    )
+    theme = gr.themes.Soft(primary_hue="blue", neutral_hue="gray")
     build_ui().queue().launch(theme=theme, css=NOTION_CSS)
 
 
