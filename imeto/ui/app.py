@@ -25,20 +25,15 @@ from imeto.worktypes import WorkType
 
 Candidates = list[tuple[int, str]]
 
-# Styl w duchu Notion: wąska kolumna, stonowana paleta, karty, systemowy font.
+# Minimalny CSS — resztę wyglądu robi motyw (theme.set) na tokenach Gradio.
 NOTION_CSS = """
-.gradio-container { max-width: 820px !important; margin: 0 auto !important;
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-  Helvetica, Arial, sans-serif !important; }
-#imeto-header h1 { color:#37352f; font-weight:700; letter-spacing:-0.02em;
-  margin-bottom:0; }
-#imeto-header p { color:#787774; margin-top:2px; font-size:14px; }
-.imeto-card { border:1px solid #ecece9 !important; border-radius:12px !important;
-  background:#ffffff !important; padding:16px 18px !important;
-  box-shadow:0 1px 2px rgba(15,15,15,.03) !important; }
-.imeto-step { color:#9b9a97; font-size:11px; font-weight:700;
-  text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px; }
-button { border-radius:8px !important; }
+.gradio-container { max-width: 760px !important; margin: 24px auto !important; }
+#imeto-header { padding: 2px 0 6px; }
+#imeto-header h1 { font-weight: 700; letter-spacing: -.02em; margin: 0; }
+#imeto-header p { color: #8a8a86; margin: 3px 0 0; font-size: 14px; }
+.imeto-label { color:#9b9a97; font-size:12px; font-weight:600;
+  text-transform:uppercase; letter-spacing:.06em; }
+footer { display: none !important; }
 """
 
 
@@ -262,8 +257,8 @@ def build_ui() -> Any:
 
         stop_btn = gr.Button("⏹ Zatrzymaj", size="sm")
 
-        with gr.Group(elem_classes="imeto-card"):
-            gr.Markdown("Źródło", elem_classes="imeto-step")
+        with gr.Group():
+            gr.Markdown("Źródło", elem_classes="imeto-label")
             mode = gr.Radio(
                 label="", choices=["Plik", "DOI", "URL"], value="Plik"
             )
@@ -279,22 +274,22 @@ def build_ui() -> Any:
                 url = gr.Textbox(label="URL", placeholder="https://...")
                 full_text = gr.Checkbox(label="Pełny tekst OA", value=False)
 
-        with gr.Group(elem_classes="imeto-card"):
-            gr.Markdown("Krok 1 · Fakty", elem_classes="imeto-step")
+        with gr.Group():
+            gr.Markdown("Krok 1 · Fakty", elem_classes="imeto-label")
             extract_btn = gr.Button("Wydobądź fakty", variant="primary")
             candidates = gr.CheckboxGroup(label="Zaznacz do przyjęcia", choices=[])
             decide_btn = gr.Button("Zatwierdź zaznaczone fakty")
             status = gr.Markdown()
 
-        with gr.Group(elem_classes="imeto-card"):
+        with gr.Group():
             gr.Markdown(
-                "Krok 2 · Potwierdzenia wpływu w sieci", elem_classes="imeto-step"
+                "Krok 2 · Potwierdzenia wpływu w sieci", elem_classes="imeto-label"
             )
             corroborate_btn = gr.Button("Potwierdź fakty w sieci")
             corr_output = gr.Markdown()
 
-        with gr.Group(elem_classes="imeto-card"):
-            gr.Markdown("Krok 3 · Ocena wg Kryterium III", elem_classes="imeto-step")
+        with gr.Group():
+            gr.Markdown("Krok 3 · Ocena wg Kryterium III", elem_classes="imeto-label")
             argue_btn = gr.Button("Oceń wg Kryterium III", variant="primary")
             arguments = gr.CheckboxGroup(label="Zaznacz do przyjęcia", choices=[])
             decide_args_btn = gr.Button("Zatwierdź zaznaczone argumenty")
@@ -321,11 +316,39 @@ def build_ui() -> Any:
     return ui
 
 
-def launch() -> None:
+def _theme() -> Any:
     import gradio as gr
 
-    theme = gr.themes.Soft(primary_hue="blue", neutral_hue="gray")
-    build_ui().queue().launch(theme=theme, css=NOTION_CSS)
+    return gr.themes.Soft(
+        primary_hue="blue",
+        neutral_hue="gray",
+        radius_size="lg",
+        spacing_size="lg",
+        text_size="md",
+    ).set(
+        body_background_fill="#f7f7f5",
+        body_text_color="#37352f",
+        block_background_fill="#ffffff",
+        block_border_color="#ececeb",
+        block_border_width="1px",
+        block_shadow="0 1px 2px rgba(15,15,15,0.04)",
+        block_label_text_color="#8a8a86",
+        block_title_text_color="#37352f",
+        input_background_fill="#ffffff",
+        input_border_color="#e6e6e4",
+        button_large_radius="10px",
+        button_small_radius="8px",
+        button_primary_background_fill="#2f6fe0",
+        button_primary_background_fill_hover="#215fd0",
+        button_primary_text_color="#ffffff",
+        button_secondary_background_fill="#ffffff",
+        button_secondary_border_color="#e0e0de",
+        button_secondary_text_color="#37352f",
+    )
+
+
+def launch() -> None:
+    build_ui().queue().launch(theme=_theme(), css=NOTION_CSS)
 
 
 if __name__ == "__main__":
