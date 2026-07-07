@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     llm_model: str = ""  # walidowany przy użyciu (klient LLM), nie przy imporcie
     llm_json_mode: bool = False
     llm_temperature: float = 0.2
+    chunk_chars: int = 6000  # próg dzielenia tekstu (pod kontekst modelu)
 
     # Dane: db_url to zarazem przełącznik silnika SQLite ↔ Postgres (§9.4)
     db_url: str = "sqlite:///imeto.db"

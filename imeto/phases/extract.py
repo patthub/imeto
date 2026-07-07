@@ -14,10 +14,25 @@ Realizuje ustaloną zasadę:
 
 from dataclasses import dataclass, field
 
+from imeto.core.chunking import chunk_text
 from imeto.core.provenance import SpanNotVerified
-from imeto.core.schemas import Extraction
+from imeto.core.schemas import ExtractedFact, Extraction
+from imeto.core.span import _fold
 from imeto.phases.base import PhaseContext, PhaseResult
 from imeto.worktypes import WorkType
+
+
+def _dedup_facts(facts: list[ExtractedFact]) -> list[ExtractedFact]:
+    """Usuwa fakty o identycznym zbiorze cytatów (te same z nakładających się
+    fragmentów). Fakty o różnych cytatach zostają."""
+    seen: set[frozenset[str]] = set()
+    out: list[ExtractedFact] = []
+    for fact in facts:
+        key = frozenset(_fold(q).strip().lower() for q in fact.quotes)
+        if key not in seen:
+            seen.add(key)
+            out.append(fact)
+    return out
 
 EXTRACT_SYSTEM = (
     "Jesteś asystentem wydobywającym fakty z wytworów naukowych. Zwróć tylko JSON:\n"
@@ -39,13 +54,22 @@ class ExtractPhase:
     source_id: int
     work_type: WorkType
     name: str = field(default="extract")
+    chunk_chars: int = 6000  # próg dzielenia długiego tekstu (kontekst modelu)
 
     def run(self, ctx: PhaseContext) -> PhaseResult:
         src = ctx.store.get_source(self.source_id)
         # baza (uniwersalne niezmienniki) + skill typu wytworu (co jest faktem)
         skill = ctx.skills.load(self.work_type.value)
         system = f"{EXTRACT_SYSTEM}\n\n{skill}"
-        extraction = ctx.llm.structured(system, src.full_text, Extraction)
+        # długi tekst (np. pełny artykuł OA) dzielimy na nakładające się fragmenty;
+        # cytaty weryfikujemy potem względem CAŁEGO full_text (offsety globalne)
+        chunks = chunk_text(src.full_text, self.chunk_chars)
+        # ponytail: koszt = 1 wywołanie modelu na fragment; przy bardzo długich
+        #           tekstach dołożyć limit/próbkowanie, gdy przebiegi staną się drogie.
+        raw: list[ExtractedFact] = []
+        for chunk in chunks:
+            raw.extend(ctx.llm.structured(system, chunk, Extraction).facts)
+        facts = _dedup_facts(raw)
 
         activity = f"extract:{self.source_id}"
         agent = ctx.llm.model
@@ -53,7 +77,7 @@ class ExtractPhase:
         ungrounded = 0  # fakty bez żadnego zweryfikowanego gruntu (odrzucone)
         partial = 0  # fakty z częścią gruntów niezweryfikowanych
 
-        for fact in extraction.facts:
+        for fact in facts:
             ev_ids: list[int] = []
             failed = 0
             for quote in fact.quotes:
@@ -76,9 +100,10 @@ class ExtractPhase:
             )
             produced.append(claim_id)
 
+        frag = f", {len(chunks)} fragmentów" if len(chunks) > 1 else ""
         summary = (
             f"źródło {self.source_id}: {len(produced)} faktów zapisanych "
-            f"({partial} częściowych), {ungrounded} odrzuconych (bez pokrycia)"
+            f"({partial} częściowych), {ungrounded} odrzuconych (bez pokrycia){frag}"
         )
         return PhaseResult(
             ok=True, summary=summary, produced=produced, needs_human=True

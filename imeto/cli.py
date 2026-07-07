@@ -63,7 +63,8 @@ def _extract_or_reuse(
         typer.echo(f"źródło już zaimportowane (source_id={source_id}) — pomijam")
         _print_claims(store, existing)
         return
-    result = ExtractPhase(source_id, work_type).run(ctx)
+    phase = ExtractPhase(source_id, work_type, chunk_chars=settings.chunk_chars)
+    result = phase.run(ctx)
     typer.echo(result.summary)
     _print_claims(store, result.produced)
 

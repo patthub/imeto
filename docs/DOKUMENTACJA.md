@@ -312,9 +312,11 @@ typ i **abstrakt**; podając **ORCID** (identyfikator badacza), dostajemy listę
 z naszej zasady: skoro każdy fakt musi mieć dosłowne pokrycie w tekście, **wydobywamy fakty
 tylko z tekstu, który faktycznie mamy** — a z API domyślnie jest to abstrakt. Gdy praca jest
 otwarcie dostępna (Open Access), można **pobrać jej pełny tekst** (flaga `--full-text`):
-system ściąga PDF OA i parsuje go tak samo jak plik lokalny. Uwaga: pełny artykuł bywa bardzo
-długi (dziesiątki tysięcy znaków) i może przekroczyć okno kontekstu małego modelu — wtedy
-potrzebne będzie dzielenie tekstu na fragmenty (osobny, przyszły krok).
+system ściąga PDF OA i parsuje go tak samo jak plik lokalny. Pełny artykuł bywa bardzo długi
+(dziesiątki tysięcy znaków) i przekracza okno kontekstu małego modelu — dlatego długi tekst
+jest **dzielony na nakładające się fragmenty**, model przetwarza każdy osobno, a fakty są
+scalane. Cytaty i tak weryfikujemy względem CAŁEGO tekstu, więc pozycje pozostają globalne
+(patrz [Krok 14](#krok-14)).
 
 **Technicznie:** `imeto/ingest/loaders.py` woła publiczne API (OpenAlex po DOI — odtwarza
 abstrakt z „odwróconego indeksu", zwraca też `pdf_url` OA; ORCID po liście prac).
@@ -323,6 +325,24 @@ do abstraktu — nigdy nie przerywa). Pozyskanie źródła (z pliku albo z API) 
 ekstrakcji: `imeto/ingest/sources.py` buduje `Source`, a `ExtractPhase` operuje na gotowym
 `source_id`. W wierszu poleceń: `imeto ingest --doi <DOI> --type <typ> [--full-text]` albo
 `imeto ingest --orcid <ORCID>`. Do „polite pool" API służy `CONTACT_EMAIL` w ustawieniach.
+
+### Krok 14 — Dzielenie długiego tekstu na fragmenty (chunking)
+<a id="krok-14"></a>
+
+**Prosto:** mały model AI ma ograniczoną „pamięć roboczą" — nie przeczyta naraz całego
+artykułu na kilkadziesiąt tysięcy znaków. Dlatego długi tekst tniemy na **nakładające się
+kawałki**, model przetwarza każdy osobno, a wydobyte fakty łączymy w jedną listę. Nakładka
+sprawia, że fakt na styku dwóch kawałków nie ginie; a że ten sam fakt może wtedy pojawić się
+dwa razy, **usuwamy duplikaty**. Najważniejsze: **każdy cytat i tak sprawdzamy względem
+całego dokumentu**, więc pozycje w źródle pozostają prawidłowe niezależnie od podziału —
+gwarancja dosłowności działa tak samo.
+
+**Technicznie:** `imeto/core/chunking.py` (`chunk_text`) dzieli tekst na fragmenty o
+konfigurowalnej długości (`CHUNK_CHARS`, domyślnie 6000 znaków), tnąc na granicy akapitu lub
+zdania i z nakładką. `ExtractPhase` woła model raz na fragment, zbiera fakty, deduplikuje je
+po zbiorze cytatów, po czym weryfikuje grunty względem pełnego `full_text` (offsety globalne).
+Krótki tekst (mieszczący się w progu) to po prostu jeden fragment — zachowanie bez zmian.
+Próg dopasowuje się do okna kontekstu modelu przez `CHUNK_CHARS` w ustawieniach.
 
 ---
 
@@ -596,8 +616,9 @@ Zbudowane: **kroki 0–13** — cały przepływ POC-1 (szkielet, weryfikacja cyt
 danych, baza z pochodzeniem, ustawienia, klient AI, wczytywanie dokumentów, faza ekstrakcji,
 wiersz poleceń, próg człowieka, GUI Gradio), **fundament POC-2** — typowane fakty
 (direct / inferred) z wieloma dosłownie zakotwiczonymi gruntami (Krok 11), **ekstrakcja
-per typ wytworu** ze skillami w formacie Agent Skills (Krok 12) oraz **pobieranie wytworów
-przez API** (DOI/ORCID, Krok 13).
+per typ wytworu** ze skillami w formacie Agent Skills (Krok 12), **pobieranie wytworów
+przez API** (DOI/ORCID + pełny tekst OA, Krok 13) oraz **dzielenie długiego tekstu na
+fragmenty** (Krok 14).
 
 Uruchomienie interfejsu:
 ```bash
@@ -605,12 +626,12 @@ uv sync --extra ui          # doinstaluj Gradio (raz)
 uv run imeto ui             # otwórz interfejs w przeglądarce
 ```
 
-Następne kroki: **dzielenie długiego tekstu na fragmenty** (pełny artykuł OA przekracza okno
-kontekstu małego modelu), kolejne typy wytworów, propozycje tropów, rozbiór argumentacyjny
-ZA/PRZECIW (relacje CiTO), asystent redakcyjny, eksport dossier (m.in. JSON-LD), mapa
-twierdzeń. Warunkowo: „dyrygent" wielu faz (sekwencer), Postgres, prawdziwe API. Dotrenowanie
-modelu (fine-tuning) świadomie odłożone — najpierw prompty, few-shot w skillach i golden set
-(mamy: recall 0.98 / precyzja 0.97 / rodzaj 0.98 na 18 przypadkach).
+Następne kroki: kolejne typy wytworów, **propozycje tropów i rozbiór argumentacyjny
+ZA/PRZECIW** (relacje CiTO) — czyli zamiana faktów w ocenę wg Kryterium III, asystent
+redakcyjny, eksport dossier (m.in. JSON-LD), mapa twierdzeń. Warunkowo: „dyrygent" wielu faz
+(sekwencer), Postgres, prawdziwe API. Dotrenowanie modelu (fine-tuning) świadomie odłożone —
+najpierw prompty, few-shot w skillach i golden set (mamy: recall 0.98 / precyzja 0.97 /
+rodzaj 0.98 na 18 przypadkach).
 
 ---
 
