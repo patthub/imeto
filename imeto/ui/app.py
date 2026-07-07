@@ -18,6 +18,7 @@ from imeto.ingest.sources import (
 )
 from imeto.phases.argumenter import ArgumenterPhase
 from imeto.phases.base import PhaseContext
+from imeto.phases.corroborate import CorroboratePhase
 from imeto.phases.extract import ExtractPhase
 from imeto.registries.skills import SkillRegistry
 from imeto.worktypes import WorkType
@@ -132,6 +133,26 @@ def apply_argument_decisions(
     return len(accepted), len(all_ids) - len(accepted)
 
 
+def corroborate_facts(
+    store: ProvenanceStore, skills: SkillRegistry, source_id: int, llm: LLMClient
+) -> str:
+    """Szuka w sieci potwierdzeń wpływu zaakceptowanych faktów i zwraca markdown
+    z wynikami (fakt → potwierdzenie zewnętrzne + źródło)."""
+    ctx = PhaseContext(store=store, llm=llm, skills=skills)
+    CorroboratePhase(source_id).run(ctx)
+    lines: list[str] = []
+    for claim in store.claims_for_source(source_id, status="accepted"):
+        assert claim.id is not None
+        evs = store.evidence_for_claim(claim.id)
+        ext = [e for e in evs if e.source_id != source_id]
+        if ext:
+            lines.append(f"**{claim.statement}**")
+            for e in ext:
+                src = store.get_source(e.source_id)
+                lines.append(f"  - ✓ „{e.quote}” — {src.local_identifier}")
+    return "\n".join(lines) if lines else "Nie znaleziono potwierdzeń w sieci."
+
+
 def build_ui() -> Any:
     import gradio as gr
 
@@ -202,34 +223,21 @@ def build_ui() -> Any:
         acc, rej = apply_argument_decisions(store, all_ids, selected)
         return f"Zaakceptowano {acc} argumentów, odrzucono {rej}."
 
-    def on_search(query):  # type: ignore[no-untyped-def]
-        if not query.strip():
-            return gr.update(choices=[]), "Podaj zapytanie."
+    def on_corroborate(source_id, base_url, model):  # type: ignore[no-untyped-def]
+        if not source_id:
+            return "Najpierw wydobądź i zatwierdź fakty."
         try:
-            from imeto.tools.web_search import web_search
-
-            res = web_search(query.strip(), max_results=8)
+            return corroborate_facts(
+                store, skills, int(source_id), _llm(base_url, model)
+            )
         except Exception as e:  # noqa: BLE001
-            return gr.update(choices=[]), f"Błąd wyszukiwania: {e}"
-        choices = [(f"{r.title[:70]} — {r.url}", r.url) for r in res]
-        return gr.update(choices=choices), f"Znaleziono {len(choices)} — wybierz wynik."
-
-    def on_pick(picked_url):  # type: ignore[no-untyped-def]
-        if not picked_url:
-            return gr.update(), gr.update()
-        return picked_url, "URL"  # wstaw URL i przełącz źródło na URL
+            return f"Błąd: {e}"
 
     with gr.Blocks(title="IMeTo") as ui:
         gr.Markdown("# IMeTo — fakty z pokryciem → ocena wg Kryterium III")
         with gr.Row():
             base_url = gr.Textbox(label="Adres modelu", value=settings.llm_base_url)
             model = gr.Textbox(label="Model", value=settings.llm_model)
-        gr.Markdown("### Szukaj dowodów w sieci (opcjonalnie)")
-        with gr.Row():
-            search_query = gr.Textbox(label="Zapytanie", placeholder="np. wpływ badań…")
-            search_btn = gr.Button("Szukaj w sieci")
-        results = gr.Radio(label="Wyniki (wybierz → wstawi URL)", choices=[])
-
         mode = gr.Radio(label="Źródło", choices=["Plik", "DOI", "URL"], value="Plik")
         with gr.Row():
             document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
@@ -249,7 +257,11 @@ def build_ui() -> Any:
         decide_btn = gr.Button("Zatwierdź zaznaczone fakty")
         status = gr.Markdown()
 
-        gr.Markdown("### 2. Ocena wg Kryterium III (nad zaakceptowanymi faktami)")
+        gr.Markdown("### 2. Potwierdzenia wpływu w sieci (nad zaakceptowanymi faktami)")
+        corroborate_btn = gr.Button("Potwierdź fakty w sieci")
+        corr_output = gr.Markdown()
+
+        gr.Markdown("### 3. Ocena wg Kryterium III (nad zaakceptowanymi faktami)")
         argue_btn = gr.Button("Oceń wg Kryterium III", variant="primary")
         arguments = gr.CheckboxGroup(label="Argumenty (zaznacz)", choices=[])
         decide_args_btn = gr.Button("Zatwierdź zaznaczone argumenty")
@@ -271,8 +283,9 @@ def build_ui() -> Any:
         decide_args_btn.click(
             on_decide_args, [arguments, arg_ids], [arg_status]
         )
-        search_btn.click(on_search, [search_query], [results, status])
-        results.change(on_pick, [results], [url, mode])
+        corroborate_btn.click(
+            on_corroborate, [source_id, base_url, model], [corr_output]
+        )
     return ui
 
 
