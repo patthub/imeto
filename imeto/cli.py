@@ -20,6 +20,7 @@ from imeto.ingest.sources import (
 )
 from imeto.phases.argumenter import ArgumenterPhase
 from imeto.phases.base import PhaseContext
+from imeto.phases.corroborate import CorroboratePhase
 from imeto.phases.extract import ExtractPhase
 from imeto.registries.skills import SkillRegistry
 from imeto.worktypes import WorkType
@@ -164,6 +165,24 @@ def argue(
         typer.echo(f"  [{aid}] {arg.side.upper()}: {arg.statement}")
         for claim in store.claims_for_argument(aid):
             typer.echo(f"      ← {claim.statement}")
+
+
+@app.command()
+def corroborate(
+    source_id: int = typer.Argument(..., help="id źródła (z imeto run/ingest)"),
+    status: str = typer.Option("accepted", "--status", help="fakty: accepted | all"),
+    limit: int = typer.Option(3, "--limit", "-n", help="Kandydatów na fakt"),
+) -> None:
+    """Szukaj w sieci potwierdzeń społecznego wpływu zaakceptowanych faktów źródła."""
+    store, ctx = _context()
+    claim_status = None if status == "all" else status
+    result = CorroboratePhase(source_id, claim_status, max_candidates=limit).run(ctx)
+    typer.echo(result.summary)
+    for eid in result.produced:
+        ev = store.get_evidence(eid)
+        src = store.get_source(ev.source_id)
+        typer.echo(f"  ✓ {src.local_identifier}")
+        typer.echo(f'    „{ev.quote}”')
 
 
 @app.command("eval")

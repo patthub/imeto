@@ -26,6 +26,27 @@ def source_from_file(
     return sid, True
 
 
+FABIO_WEBPAGE = "http://purl.org/spar/fabio/WebPage"
+
+
+def source_from_text(
+    store: ProvenanceStore,
+    identifier: str,
+    text: str,
+    fabio_type: str = FABIO_WEBPAGE,
+) -> tuple[int, bool]:
+    """Zapisuje źródło z JUŻ pobranego tekstu (np. strona-dowód przy korroboracji,
+    bez ponownego pobierania). Idempotentne po identyfikatorze."""
+    existing = store.source_by_local_identifier(identifier)
+    if existing is not None:
+        assert existing.id is not None
+        return existing.id, False
+    sid = store.add_source(
+        Source(local_identifier=identifier, full_text=text, fabio_type=fabio_type)
+    )
+    return sid, True
+
+
 def source_from_url(
     store: ProvenanceStore, url: str, work_type: WorkType
 ) -> tuple[int, bool]:

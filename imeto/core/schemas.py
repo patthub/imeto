@@ -47,3 +47,12 @@ class Argumentation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     arguments: list[ProposedArgument]
+
+
+class Corroboration(BaseModel):
+    """Werdykt: czy zewnętrzna strona potwierdza społeczny wpływ danego faktu."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirms: bool
+    quote: str = ""  # DOSŁOWNY cytat ze strony potwierdzający wpływ (gdy confirms)

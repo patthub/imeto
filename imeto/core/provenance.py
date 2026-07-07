@@ -235,6 +235,13 @@ class ProvenanceStore:
             s.commit()
             return claim.id
 
+    def link_evidence(self, claim_id: int, evidence_id: int) -> None:
+        """Wiąże istniejący dowód z faktem (np. zewnętrzne potwierdzenie wpływu
+        z pobranej strony — grunt spoza źródła faktu)."""
+        with Session(self.engine) as s:
+            s.add(ClaimEvidence(claim_id=claim_id, evidence_id=evidence_id))
+            s.commit()
+
     def get_claim(self, claim_id: int) -> Claim:
         with Session(self.engine) as s:
             claim = s.get(Claim, claim_id)
