@@ -6,16 +6,36 @@ Logika (extract_candidates / apply_decisions) jest oddzielona od warstwy Gradio,
 żeby dała się testować bez uruchamiania interfejsu. `import gradio` siedzi wewnątrz
 build_ui, więc rdzeń i testy nie ciągną tej ciężkiej zależności."""
 
+from dataclasses import replace
 from typing import Any
 
 from imeto.config import settings
 from imeto.core.llm import LLMClient
 from imeto.core.provenance import ProvenanceStore
-from imeto.ingest.sources import source_from_file
+from imeto.ingest.loaders import fetch_by_doi, fetch_oa_fulltext
+from imeto.ingest.sources import source_from_fetched, source_from_file
 from imeto.phases.base import PhaseContext
 from imeto.phases.extract import ExtractPhase
 from imeto.registries.skills import SkillRegistry
 from imeto.worktypes import WorkType
+
+
+def _run_and_label(
+    store: ProvenanceStore,
+    skills: SkillRegistry,
+    source_id: int,
+    work_type: WorkType,
+    llm: LLMClient,
+) -> list[tuple[int, str]]:
+    ctx = PhaseContext(store=store, llm=llm, skills=skills)
+    phase = ExtractPhase(source_id, work_type, chunk_chars=settings.chunk_chars)
+    result = phase.run(ctx)
+    out: list[tuple[int, str]] = []
+    for cid in result.produced:
+        claim = store.get_claim(cid)
+        grounds = " | ".join(f"„{ev.quote}”" for ev in store.evidence_for_claim(cid))
+        out.append((cid, f"({claim.kind}) {claim.statement} — {grounds}"))
+    return out
 
 
 def extract_candidates(
@@ -25,17 +45,27 @@ def extract_candidates(
     work_type: WorkType,
     llm: LLMClient,
 ) -> list[tuple[int, str]]:
-    """Uruchamia ekstrakcję i zwraca listę (id_faktu, etykieta) kandydatów."""
-    ctx = PhaseContext(store=store, llm=llm, skills=skills)
+    """Ekstrakcja z wgranego pliku. Zwraca listę (id_faktu, etykieta)."""
     source_id, _ = source_from_file(store, document, work_type)
-    phase = ExtractPhase(source_id, work_type, chunk_chars=settings.chunk_chars)
-    result = phase.run(ctx)
-    out: list[tuple[int, str]] = []
-    for cid in result.produced:
-        claim = store.get_claim(cid)
-        grounds = " | ".join(f"„{ev.quote}”" for ev in store.evidence_for_claim(cid))
-        out.append((cid, f"({claim.kind}) {claim.statement} — {grounds}"))
-    return out
+    return _run_and_label(store, skills, source_id, work_type, llm)
+
+
+def extract_candidates_from_doi(
+    store: ProvenanceStore,
+    skills: SkillRegistry,
+    doi: str,
+    work_type: WorkType,
+    llm: LLMClient,
+    full_text: bool = False,
+) -> list[tuple[int, str]]:
+    """Ekstrakcja z wytworu pobranego po DOI (abstrakt, opcjonalnie pełny tekst OA)."""
+    fetched = fetch_by_doi(doi, contact_email=settings.contact_email)
+    if full_text and fetched.oa_pdf_url:
+        text = fetch_oa_fulltext(fetched.oa_pdf_url)
+        if text:
+            fetched = replace(fetched, full_text=text)
+    source_id, _ = source_from_fetched(store, fetched)
+    return _run_and_label(store, skills, source_id, work_type, llm)
 
 
 def apply_decisions(
@@ -60,11 +90,18 @@ def build_ui() -> Any:
     store = ProvenanceStore(settings.db_url)
     skills = SkillRegistry(settings.knowledge_dir)
 
-    def on_extract(document: str | None, work_type: str, base_url: str, model: str):  # type: ignore[no-untyped-def]
-        if not document:
-            return gr.update(choices=[], value=[]), [], "Wgraj dokument."
+    def on_extract(  # type: ignore[no-untyped-def]
+        mode: str,
+        document: str | None,
+        doi: str,
+        full_text: bool,
+        work_type: str,
+        base_url: str,
+        model: str,
+    ):
+        empty = gr.update(choices=[], value=[])
         if not model:
-            return gr.update(choices=[], value=[]), [], "Podaj nazwę modelu."
+            return empty, [], "Podaj nazwę modelu."
         llm = LLMClient(
             base_url=base_url,
             api_key=settings.llm_api_key,
@@ -72,7 +109,20 @@ def build_ui() -> Any:
             temperature=settings.llm_temperature,
             json_mode=settings.llm_json_mode,
         )
-        cands = extract_candidates(store, skills, document, WorkType(work_type), llm)
+        wt = WorkType(work_type)
+        try:
+            if mode == "DOI":
+                if not doi.strip():
+                    return empty, [], "Podaj DOI."
+                cands = extract_candidates_from_doi(
+                    store, skills, doi.strip(), wt, llm, full_text
+                )
+            else:
+                if not document:
+                    return empty, [], "Wgraj dokument."
+                cands = extract_candidates(store, skills, document, wt, llm)
+        except Exception as e:  # noqa: BLE001 — pokaż błąd w UI zamiast crashować
+            return empty, [], f"Błąd: {e}"
         choices = [(label, eid) for eid, label in cands]
         ids = [eid for eid, _ in cands]
         msg = f"Wydobyto {len(ids)} kandydatów."
@@ -87,6 +137,9 @@ def build_ui() -> Any:
         with gr.Row():
             base_url = gr.Textbox(label="Adres modelu", value=settings.llm_base_url)
             model = gr.Textbox(label="Model", value=settings.llm_model)
+        mode = gr.Radio(
+            label="Źródło", choices=["Plik", "DOI"], value="Plik"
+        )
         with gr.Row():
             document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
             work_type = gr.Dropdown(
@@ -94,6 +147,9 @@ def build_ui() -> Any:
                 choices=[wt.value for wt in WorkType],
                 value=WorkType.report.value,
             )
+        with gr.Row():
+            doi = gr.Textbox(label="DOI (dla źródła = DOI)", placeholder="10.1234/...")
+            full_text = gr.Checkbox(label="Pełny tekst OA", value=False)
         extract_btn = gr.Button("Wydobądź fakty", variant="primary")
         candidates = gr.CheckboxGroup(label="Kandydaci (zaznacz)", choices=[])
         decide_btn = gr.Button("Zatwierdź zaznaczone / odrzuć resztę")
@@ -102,7 +158,7 @@ def build_ui() -> Any:
 
         extract_btn.click(
             on_extract,
-            [document, work_type, base_url, model],
+            [mode, document, doi, full_text, work_type, base_url, model],
             [candidates, all_ids, status],
         )
         decide_btn.click(on_decide, [candidates, all_ids], [status])
