@@ -1,0 +1,9 @@
+{
+  "name": "poster_method",
+  "work_type": "poster",
+  "text": "Metoda: sekwencjonowanie nowej generacji na 48 próbkach. Wynik główny: wykryto 12 nowych wariantów genetycznych. Badania sfinansowano ze środków statutowych. Podziękowania dla zespołu laboratorium.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["48 próbkach"]},
+    {"kind": "direct", "quote_substrings": ["12 nowych wariantów genetycznych"]}
+  ]
+}

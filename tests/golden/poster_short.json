@@ -1,0 +1,9 @@
+{
+  "name": "poster_short",
+  "work_type": "poster",
+  "text": "Teza: model predykcyjny obniża liczbę fałszywych alarmów o połowę. Dane: 5000 zdarzeń z trzech szpitali. Prezentowano na konferencji MedAI 2025.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["obniża liczbę fałszywych alarmów o połowę"]},
+    {"kind": "direct", "quote_substrings": ["5000 zdarzeń"]}
+  ]
+}

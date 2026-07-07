@@ -1,0 +1,9 @@
+{
+  "name": "presentation_titleslide",
+  "work_type": "presentation",
+  "text": "Tytuł: Wyniki projektu 2025. Wdrożono system w 8 placówkach. Koszt wdrożenia: 240 000 zł. Dziękujemy za uwagę.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["8 placówkach"]},
+    {"kind": "direct", "quote_substrings": ["240 000"]}
+  ]
+}

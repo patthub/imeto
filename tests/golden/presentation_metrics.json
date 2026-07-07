@@ -1,0 +1,10 @@
+{
+  "name": "presentation_metrics",
+  "work_type": "presentation",
+  "text": "Liczba użytkowników wzrosła do 12 000. Retencja miesięczna wynosi 68%. Agenda: podsumowanie kwartału. Rekomendacja: zwiększyć budżet marketingowy o 20%.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["12 000"]},
+    {"kind": "direct", "quote_substrings": ["Retencja miesięczna wynosi 68%"]},
+    {"kind": "direct", "quote_substrings": ["zwiększyć budżet marketingowy o 20%"]}
+  ]
+}

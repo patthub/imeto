@@ -48,7 +48,15 @@ def test_aggregate_averages():
 
 
 def test_golden_files_present_and_valid():
+    from imeto.core.span import _fold
+
     cases = load_golden("tests/golden")
-    assert len(cases) >= 3
+    assert len(cases) >= 15
     for c in cases:
         assert c["work_type"] and c["text"] and c["expected"]
+        hay = _fold(c["text"]).lower()
+        for e in c["expected"]:
+            # każdy oczekiwany fakt musi mieć co najmniej jeden substring w tekście
+            assert any(_fold(s).lower() in hay for s in e["quote_substrings"]), (
+                f"{c['name']}: brak w tekście {e['quote_substrings']}"
+            )

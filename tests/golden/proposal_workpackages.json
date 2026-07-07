@@ -1,0 +1,11 @@
+{
+  "name": "proposal_workpackages",
+  "work_type": "proposal",
+  "text": "Zadanie 1 przewiduje przegląd literatury w pierwszych 6 miesiącach. Zadanie 2 obejmuje badania terenowe na próbie 500 gospodarstw. Wnioskowana kwota to 410 000 zł. Spodziewanym rezultatem są 2 publikacje w czasopismach z listy JCR.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["przegląd literatury"]},
+    {"kind": "direct", "quote_substrings": ["500 gospodarstw"]},
+    {"kind": "direct", "quote_substrings": ["410 000"]},
+    {"kind": "direct", "quote_substrings": ["2 publikacje"]}
+  ]
+}

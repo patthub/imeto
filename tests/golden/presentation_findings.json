@@ -1,0 +1,10 @@
+{
+  "name": "presentation_findings",
+  "work_type": "presentation",
+  "text": "Badanie objęło 350 respondentów. 72% ankietowanych preferuje wersję mobilną. Cele na następny slajd. Wniosek: priorytetem jest aplikacja mobilna.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["350 respondentów"]},
+    {"kind": "direct", "quote_substrings": ["72% ankietowanych preferuje wersję mobilną"]},
+    {"kind": "direct", "quote_substrings": ["priorytetem jest aplikacja mobilna"]}
+  ]
+}

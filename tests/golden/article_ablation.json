@@ -1,0 +1,10 @@
+{
+  "name": "article_ablation",
+  "work_type": "article",
+  "text": "Zaproponowana architektura osiągnęła F1 równy 0.89 na zbiorze testowym. Usunięcie warstwy uwagi obniżyło F1 do 0.81. Model trenowano przez 40 epok na ośmiu kartach GPU.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["F1 równy 0.89"]},
+    {"kind": "direct", "quote_substrings": ["obniżyło F1 do 0.81"]},
+    {"kind": "direct", "quote_substrings": ["40 epok"]}
+  ]
+}

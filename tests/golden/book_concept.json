@@ -1,0 +1,9 @@
+{
+  "name": "book_concept",
+  "work_type": "book",
+  "text": "W pracy wprowadzono pojęcie kapitału relacyjnego wspólnoty jako czynnika odporności lokalnej. Koncepcję zilustrowano przykładem trzech gmin popegeerowskich. Publikacja jest adresowana do szerokiego grona czytelników.",
+  "expected": [
+    {"kind": "direct", "quote_substrings": ["kapitału relacyjnego wspólnoty"]},
+    {"kind": "direct", "quote_substrings": ["trzech gmin popegeerowskich"]}
+  ]
+}
