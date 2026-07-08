@@ -25,17 +25,6 @@ from imeto.worktypes import WorkType
 
 Candidates = list[tuple[int, str]]
 
-# Minimalny CSS — resztę wyglądu robi motyw (theme.set) na tokenach Gradio.
-NOTION_CSS = """
-.gradio-container { max-width: 760px !important; margin: 24px auto !important; }
-#imeto-header { padding: 2px 0 6px; }
-#imeto-header h1 { font-weight: 700; letter-spacing: -.02em; margin: 0; }
-#imeto-header p { color: #8a8a86; margin: 3px 0 0; font-size: 14px; }
-.imeto-label { color:#9b9a97; font-size:12px; font-weight:600;
-  text-transform:uppercase; letter-spacing:.06em; }
-footer { display: none !important; }
-"""
-
 
 def _run_phase(
     store: ProvenanceStore,
@@ -162,7 +151,7 @@ def build_ui() -> Any:
     def on_extract(  # type: ignore[no-untyped-def]
         mode, document, doi, url, full_text, work_type, base_url, model
     ):
-        empty = gr.update(choices=[], value=[])
+        empty = gr.update(choices=[], value=[], visible=False)
         if not model:
             return empty, [], None, "Podaj nazwę modelu."
         wt = WorkType(work_type)
@@ -188,14 +177,17 @@ def build_ui() -> Any:
             return empty, [], None, f"Błąd: {e}"
         choices = [(label, cid) for cid, label in cands]
         ids = [cid for cid, _ in cands]
-        return gr.update(choices=choices, value=ids), ids, sid, f"Wydobyto {len(ids)}."
+        return (
+            gr.update(choices=choices, value=ids, visible=True),
+            ids, sid, f"Wydobyto {len(ids)}.",
+        )
 
     def on_decide(selected, all_ids):  # type: ignore[no-untyped-def]
         acc, rej = apply_decisions(store, all_ids, selected)
         return f"Zaakceptowano {acc} faktów, odrzucono {rej}."
 
     def on_argue(source_id, base_url, model):  # type: ignore[no-untyped-def]
-        empty = gr.update(choices=[], value=[])
+        empty = gr.update(choices=[], value=[], visible=False)
         if not source_id:
             return empty, [], "Najpierw wydobądź i zatwierdź fakty."
         try:
@@ -208,7 +200,7 @@ def build_ui() -> Any:
         choices = [(label, aid) for aid, label in args]
         ids = [aid for aid, _ in args]
         msg = f"Zbudowano {len(ids)} argumentów."
-        return gr.update(choices=choices, value=ids), ids, msg
+        return gr.update(choices=choices, value=ids, visible=True), ids, msg
 
     def on_decide_args(selected, all_ids):  # type: ignore[no-untyped-def]
         acc, rej = apply_argument_decisions(store, all_ids, selected)
@@ -242,62 +234,50 @@ def build_ui() -> Any:
                 lines.append(f"    „{ev.quote}” — {src.local_identifier}")
         yield "\n".join(lines) if lines else "Nie znaleziono potwierdzeń w sieci."
 
-    force_light = (
-        "() => { if (!window.location.search.includes('__theme')) "
-        "{ window.location.search = '__theme=light'; } }"
-    )
-    with gr.Blocks(title="IMeTo", js=force_light) as ui:
-        with gr.Column(elem_id="imeto-header"):
-            gr.Markdown("# IMeTo")
-            gr.Markdown(
-                "Fakty z pokryciem w źródle → potwierdzenia wpływu w sieci "
-                "→ ocena wg Kryterium III"
-            )
+    with gr.Blocks(title="IMeTo") as ui:
+        gr.Markdown("# IMeTo")
+        gr.Markdown(
+            "Fakty z pokryciem w źródle → potwierdzenia wpływu w sieci "
+            "→ ocena wg Kryterium III"
+        )
 
-        with gr.Accordion("⚙️ Ustawienia modelu", open=False):
-            with gr.Row():
-                base_url = gr.Textbox(label="Adres modelu", value=settings.llm_base_url)
-                model = gr.Textbox(label="Model", value=settings.llm_model)
+        with gr.Accordion("Ustawienia modelu", open=False):
+            base_url = gr.Textbox(label="Adres modelu", value=settings.llm_base_url)
+            model = gr.Textbox(label="Model", value=settings.llm_model)
 
-        stop_btn = gr.Button("⏹ Zatrzymaj", size="sm")
+        gr.Markdown("## Źródło")
+        mode = gr.Radio(choices=["Plik", "DOI", "URL"], value="Plik", label="Tryb")
+        document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
+        work_type = gr.Dropdown(
+            label="Typ wytworu",
+            choices=[wt.value for wt in WorkType],
+            value=WorkType.report.value,
+        )
+        doi = gr.Textbox(label="DOI", placeholder="10.1234/...")
+        url = gr.Textbox(label="URL", placeholder="https://...")
+        full_text = gr.Checkbox(label="Pełny tekst OA", value=False)
 
-        with gr.Group():
-            gr.Markdown("Źródło", elem_classes="imeto-label")
-            mode = gr.Radio(
-                choices=["Plik", "DOI", "URL"], value="Plik", show_label=False
-            )
-            with gr.Row():
-                document = gr.File(label="Dokument (PDF/DOCX)", type="filepath")
-                work_type = gr.Dropdown(
-                    label="Typ wytworu",
-                    choices=[wt.value for wt in WorkType],
-                    value=WorkType.report.value,
-                )
-            with gr.Row():
-                doi = gr.Textbox(label="DOI", placeholder="10.1234/...")
-                url = gr.Textbox(label="URL", placeholder="https://...")
-                full_text = gr.Checkbox(label="Pełny tekst OA", value=False)
+        gr.Markdown("## Krok 1 · Fakty")
+        extract_btn = gr.Button("Wydobądź fakty", variant="primary")
+        candidates = gr.CheckboxGroup(
+            label="Zaznacz do przyjęcia", choices=[], visible=False
+        )
+        decide_btn = gr.Button("Zatwierdź zaznaczone fakty")
+        status = gr.Markdown()
 
-        with gr.Group():
-            gr.Markdown("Krok 1 · Fakty", elem_classes="imeto-label")
-            extract_btn = gr.Button("Wydobądź fakty", variant="primary")
-            candidates = gr.CheckboxGroup(label="Zaznacz do przyjęcia", choices=[])
-            decide_btn = gr.Button("Zatwierdź zaznaczone fakty")
-            status = gr.Markdown()
+        gr.Markdown("## Krok 2 · Potwierdzenia wpływu w sieci")
+        corroborate_btn = gr.Button("Potwierdź fakty w sieci")
+        corr_output = gr.Markdown()
 
-        with gr.Group():
-            gr.Markdown(
-                "Krok 2 · Potwierdzenia wpływu w sieci", elem_classes="imeto-label"
-            )
-            corroborate_btn = gr.Button("Potwierdź fakty w sieci")
-            corr_output = gr.Markdown()
+        gr.Markdown("## Krok 3 · Ocena wg Kryterium III")
+        argue_btn = gr.Button("Oceń wg Kryterium III", variant="primary")
+        arguments = gr.CheckboxGroup(
+            label="Zaznacz do przyjęcia", choices=[], visible=False
+        )
+        decide_args_btn = gr.Button("Zatwierdź zaznaczone argumenty")
+        arg_status = gr.Markdown()
 
-        with gr.Group():
-            gr.Markdown("Krok 3 · Ocena wg Kryterium III", elem_classes="imeto-label")
-            argue_btn = gr.Button("Oceń wg Kryterium III", variant="primary")
-            arguments = gr.CheckboxGroup(label="Zaznacz do przyjęcia", choices=[])
-            decide_args_btn = gr.Button("Zatwierdź zaznaczone argumenty")
-            arg_status = gr.Markdown()
+        stop_btn = gr.Button("Zatrzymaj")
 
         source_id = gr.State(None)
         all_ids = gr.State([])
@@ -320,42 +300,8 @@ def build_ui() -> Any:
     return ui
 
 
-def _theme() -> Any:
-    import gradio as gr
-
-    return gr.themes.Soft(
-        primary_hue="blue",
-        neutral_hue="gray",
-        radius_size="lg",
-        spacing_size="lg",
-        text_size="md",
-    ).set(
-        body_background_fill="#f7f7f5",
-        body_text_color="#37352f",
-        block_background_fill="#ffffff",
-        block_border_color="#ececeb",
-        block_border_width="1px",
-        block_shadow="0 1px 2px rgba(15,15,15,0.04)",
-        block_label_text_color="#8a8a86",
-        block_label_background_fill="transparent",
-        block_title_text_color="#6b6b68",
-        block_title_background_fill="transparent",
-        checkbox_label_background_fill="#ffffff",
-        input_background_fill="#ffffff",
-        input_border_color="#e6e6e4",
-        button_large_radius="10px",
-        button_small_radius="8px",
-        button_primary_background_fill="#2f6fe0",
-        button_primary_background_fill_hover="#215fd0",
-        button_primary_text_color="#ffffff",
-        button_secondary_background_fill="#ffffff",
-        button_secondary_border_color="#e0e0de",
-        button_secondary_text_color="#37352f",
-    )
-
-
 def launch() -> None:
-    build_ui().queue().launch(theme=_theme(), css=NOTION_CSS)
+    build_ui().queue().launch()
 
 
 if __name__ == "__main__":
