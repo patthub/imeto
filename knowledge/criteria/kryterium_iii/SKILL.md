@@ -1,52 +1,52 @@
 ---
 name: kryterium-iii
-description: Rubryka oceny Kryterium III — wpływ społeczny działalności naukowej
+description: Scoring rubric for Criterion III — social impact of scientific activity
 metadata:
   criterion: kryterium_iii
   version: 2
 ---
 
-## Kryterium III — wpływ społeczny działalności naukowej
+## Criterion III — social impact of scientific activity
 
-Oceniasz **wpływ działalności naukowej na funkcjonowanie społeczeństwa i gospodarki**:
-pozytywny skutek społeczny (korzyść), jaki działalność naukowa podmiotu przyniosła w
-otoczeniu **pozaakademickim** — w gospodarce, administracji publicznej, ochronie zdrowia,
-kulturze i sztuce, ochronie środowiska, bezpieczeństwie i obronności lub innym czynniku
-rozwoju cywilizacyjnego. Wpływem może być też zaniechanie działań szkodliwych; skutek
-może być zaplanowany albo nieoczekiwany.
+You assess the **impact of scientific activity on the functioning of society and the economy**:
+the positive social effect (benefit) that the entity's scientific activity brought about in its
+**non-academic** environment — in the economy, public administration, healthcare,
+culture and the arts, environmental protection, security and defense, or another factor
+of civilizational development. Impact may also be the avoidance of harmful actions; the effect
+may be planned or unexpected.
 
-Kluczowe: musi istnieć **związek przyczynowo-skutkowy** między badaniami/pracami rozwojowymi
-podmiotu a opisanym wpływem, a wpływ musi być **udowodniony i udokumentowany** (raporty,
-publikacje naukowe, cytowania w innych dokumentach/publikacjach).
+Key: there must be a **cause-and-effect relationship** between the entity's research/development
+work and the described impact, and the impact must be **proven and documented** (reports,
+scientific publications, citations in other documents/publications).
 
-## Co świadczy ZA (jest wpływ)
+## What speaks IN FAVOR (impact exists)
 
-- realny, pozaakademicki skutek badań: wdrożenie, zmiana praktyki, regulacji, technologii,
-  poprawa zdrowia/jakości życia, korzyść gospodarcza, środowiskowa, kulturowa,
-- powiązany z konkretnymi badaniami/pracami podmiotu (związek przyczynowy),
-- poparty dowodem (raport, publikacja, cytowanie, dokument wdrożeniowy).
+- a real, non-academic effect of the research: deployment, a change in practice, regulation, technology,
+  improvement in health/quality of life, an economic, environmental, or cultural benefit,
+- linked to the entity's specific research/work (a causal relationship),
+- supported by evidence (report, publication, citation, deployment document).
 
-Zwróć uwagę na **wymiary punktacji** — jeśli fakt na to pozwala, sygnalizuj je w argumencie:
-- **zasięg**: międzynarodowy/całkowity, krajowy/szeroki, regionalny/częściowy, lokalny/ograniczony, marginalny;
-- **znaczenie**: przełomowe, istotne, ograniczone, znikome.
+Pay attention to the **scoring dimensions** — if a fact allows it, signal them in the argument:
+- **reach**: international/total, national/broad, regional/partial, local/limited, marginal;
+- **significance**: breakthrough, substantial, limited, negligible.
 
-## Co świadczy PRZECIW (nie jest wpływem)
+## What speaks AGAINST (is not impact)
 
-Jawne wykluczenia — te NIE są wpływem społecznym:
-- popularyzacja badań na własnych stronach, w serwisach i mediach społecznościowych,
-- organizacja konferencji i wydarzeń popularyzujących wyniki,
-- oddziaływanie na własnych studentów / proces ich nauczania,
-- skutek bez związku przyczynowego z badaniami podmiotu, albo czysto akademicki.
+Explicit exclusions — these are NOT social impact:
+- popularization of research on one's own websites, services, and social media,
+- organizing conferences and events popularizing the results,
+- influence on one's own students / the process of teaching them,
+- an effect with no causal link to the entity's research, or a purely academic one.
 
-## Co jest LUKĄ
+## What is a GAP
 
-- wpływ deklarowany, ale **nieudokumentowany** (brak raportu/publikacji/cytowania jako dowodu),
-- brak wykazanego **związku przyczynowego** z badaniami podmiotu,
-- brak danych o **zasięgu** lub **znaczeniu**, które pozwoliłyby ocenić skalę,
-- niejasność, czy skutek zaistniał w otoczeniu pozaakademickim.
+- impact that is declared but **undocumented** (no report/publication/citation as evidence),
+- no demonstrated **causal relationship** with the entity's research,
+- no data on **reach** or **significance** that would allow the scale to be assessed,
+- unclear whether the effect occurred in the non-academic environment.
 
-## Zasada nadrzędna
+## Overriding principle
 
-Każdy argument ZA/PRZECIW opieraj WYŁĄCZNIE na podanych faktach (przez `based_on`).
-LUKA wskazuje brak — może nie odnosić się do żadnego faktu. Jeśli czegoś brak (dowodu,
-związku, zasięgu), to jest to LUKA, nie argument ZA. Nie dodawaj informacji spoza faktów.
+Base every FOR/AGAINST argument SOLELY on the given facts (via `based_on`).
+A GAP indicates an absence — it may not refer to any fact. If something is missing (evidence,
+a link, reach), then it is a GAP, not a FOR argument. Do not add information beyond the facts.

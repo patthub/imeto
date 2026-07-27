@@ -2,14 +2,14 @@ import pytest
 
 from imeto.core.provenance import ProvenanceStore, Source
 
-SRC = "Rada gminy przyjęła uchwałę nr 12 w sprawie budżetu."
+SRC = "The council adopted resolution no. 12 regarding the budget."
 
 
 def _store_with_claim() -> tuple[ProvenanceStore, int, int]:
     store = ProvenanceStore()
     sid = store.add_source(Source(local_identifier="d", full_text=SRC))
-    e = store.add_evidence(sid, "uchwałę nr 12")
-    cid = store.add_claim(sid, "Rada przyjęła.", "direct", [e])
+    e = store.add_evidence(sid, "resolution no. 12")
+    cid = store.add_claim(sid, "The council adopted.", "direct", [e])
     return store, sid, cid
 
 

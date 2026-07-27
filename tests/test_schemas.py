@@ -5,7 +5,11 @@ from imeto.core.schemas import Argumentation, Extraction
 
 
 def _fact(**kw: object) -> dict:
-    base = {"statement": "Rada.", "kind": "direct", "quotes": ["uchwałę nr 12"]}
+    base = {
+        "statement": "The council.",
+        "kind": "direct",
+        "quotes": ["resolution no. 12"],
+    }
     base.update(kw)
     return {"facts": [base]}
 
@@ -13,12 +17,12 @@ def _fact(**kw: object) -> dict:
 def test_valid_extraction_parses():
     ex = Extraction.model_validate(_fact())
     assert ex.facts[0].kind == "direct"
-    assert ex.facts[0].quotes == ["uchwałę nr 12"]
+    assert ex.facts[0].quotes == ["resolution no. 12"]
 
 
 def test_inferred_kind_parses():
     ex = Extraction.model_validate(
-        _fact(kind="inferred", quotes=["3 konferencje", "po 100 osób"])
+        _fact(kind="inferred", quotes=["3 conferences", "100 people each"])
     )
     assert ex.facts[0].kind == "inferred"
     assert len(ex.facts[0].quotes) == 2
@@ -45,7 +49,7 @@ def test_empty_quotes_list_rejected():
 
 def test_invalid_kind_rejected():
     with pytest.raises(ValidationError):
-        Extraction.model_validate(_fact(kind="zgadywane"))
+        Extraction.model_validate(_fact(kind="guessed"))
 
 
 def test_blank_quote_rejected():
@@ -55,14 +59,14 @@ def test_blank_quote_rejected():
 
 def test_argumentation_parses():
     a = Argumentation.model_validate(
-        {"arguments": [{"side": "za", "statement": "arg", "based_on": [1, 2]}]}
+        {"arguments": [{"side": "for", "statement": "arg", "based_on": [1, 2]}]}
     )
-    assert a.arguments[0].side == "za"
+    assert a.arguments[0].side == "for"
     assert a.arguments[0].based_on == [1, 2]
 
 
 def test_argument_invalid_side_rejected():
     with pytest.raises(ValidationError):
         Argumentation.model_validate(
-            {"arguments": [{"side": "moze", "statement": "x", "based_on": []}]}
+            {"arguments": [{"side": "maybe", "statement": "x", "based_on": []}]}
         )

@@ -1,5 +1,5 @@
-"""CLI (Typer). Cienka skórka: wiąże konfigurację z rdzeniem i uruchamia fazy.
-Logika nigdy tutaj — CLI tylko woła rdzeń (zasada nadrzędna z §2)."""
+"""CLI (Typer). Thin skin: wires config to the core and runs phases.
+Logic never lives here — the CLI only calls the core (top-level rule from §2)."""
 
 from pathlib import Path
 
@@ -25,12 +25,12 @@ from imeto.phases.extract import ExtractPhase
 from imeto.registries.skills import SkillRegistry
 from imeto.worktypes import WorkType
 
-app = typer.Typer(help="IMeTo — ekstrakcja faktów z pokryciem w źródle.")
+app = typer.Typer(help="IMeTo — extract facts grounded in the source.")
 
 
 @app.callback()
 def _cb() -> None:
-    """Wymusza nazwane podkomendy (imeto run ...)."""
+    """Forces named subcommands (imeto run ...)."""
 
 
 def _llm() -> LLMClient:
@@ -56,17 +56,20 @@ def _print_claims(store: ProvenanceStore, claim_ids: list[int]) -> None:
         claim = store.get_claim(cid)
         typer.echo(f"  [{cid}] ({claim.kind}) {claim.statement}")
         for ev in store.evidence_for_claim(cid):
-            typer.echo(f'      „{ev.quote}” ({ev.start}–{ev.end})')
+            typer.echo(f"      „{ev.quote}” ({ev.start}–{ev.end})")
 
 
 def _extract_or_reuse(
-    store: ProvenanceStore, ctx: PhaseContext, source_id: int, created: bool,
+    store: ProvenanceStore,
+    ctx: PhaseContext,
+    source_id: int,
+    created: bool,
     work_type: WorkType,
 ) -> None:
-    """Ekstrahuje z nowego źródła; dla już zaimportowanego pokazuje istniejące fakty."""
+    """Extracts from a new source; for an already-imported one shows existing claims."""
     if not created:
         existing = [c.id for c in store.claims_for_source(source_id) if c.id]
-        typer.echo(f"źródło już zaimportowane (source_id={source_id}) — pomijam")
+        typer.echo(f"source already imported (source_id={source_id}) — skipping")
         _print_claims(store, existing)
         return
     phase = ExtractPhase(source_id, work_type, chunk_chars=settings.chunk_chars)
@@ -78,13 +81,13 @@ def _extract_or_reuse(
 @app.command()
 def run(
     document: Path = typer.Argument(
-        ..., exists=True, dir_okay=False, help="PDF lub DOCX do przetworzenia"
+        ..., exists=True, dir_okay=False, help="PDF or DOCX to process"
     ),
     work_type: WorkType = typer.Option(
-        ..., "--type", "-t", help="Typ wytworu: article | report | proposal | ..."
+        ..., "--type", "-t", help="Work type: article | report | proposal | ..."
     ),
 ) -> None:
-    """Wydobądź fakty z pliku DOKUMENTU (danego TYPU) i zapisz je do provenance."""
+    """Extract claims from the DOCUMENT file (of given TYPE) and save to provenance."""
     store, ctx = _context()
     source_id, created = source_from_file(store, document, work_type)
     _extract_or_reuse(store, ctx, source_id, created, work_type)
@@ -92,56 +95,56 @@ def run(
 
 @app.command()
 def ingest(
-    doi: str | None = typer.Option(None, "--doi", help="Pobierz wytwór po DOI"),
-    orcid: str | None = typer.Option(None, "--orcid", help="Wypisz prace ORCID"),
-    url: str | None = typer.Option(None, "--url", help="Pobierz stronę WWW"),
+    doi: str | None = typer.Option(None, "--doi", help="Fetch a work by DOI"),
+    orcid: str | None = typer.Option(None, "--orcid", help="List ORCID works"),
+    url: str | None = typer.Option(None, "--url", help="Fetch a web page"),
     work_type: WorkType | None = typer.Option(
-        None, "--type", "-t", help="Typ wytworu (wymagany dla --doi jeśli nieznany)"
+        None, "--type", "-t", help="Work type (required for --doi if unknown)"
     ),
     full_text: bool = typer.Option(
-        False, "--full-text", "-f", help="Pobierz pełny tekst OA (PDF), jeśli dostępny"
+        False, "--full-text", "-f", help="Fetch OA full text (PDF), if available"
     ),
 ) -> None:
-    """Pobierz źródło (--doi / --url) i wydobądź fakty, albo wypisz prace (--orcid)."""
+    """Fetch a source (--doi / --url) and extract claims, or list works (--orcid)."""
     from dataclasses import replace
 
     if orcid:
         dois = fetch_works_by_orcid(orcid)
-        typer.echo(f"Prace ORCID {orcid} ({len(dois)}):")
+        typer.echo(f"ORCID works {orcid} ({len(dois)}):")
         for d in dois:
             typer.echo(f"  {d}")
-        typer.echo("Uruchom ekstrakcję: imeto ingest --doi <DOI> --type <typ>")
+        typer.echo("Run extraction: imeto ingest --doi <DOI> --type <type>")
         return
     if url:
         if work_type is None:
-            raise typer.BadParameter("podaj --type dla --url")
+            raise typer.BadParameter("provide --type for --url")
         store, ctx = _context()
         try:
             source_id, created = source_from_url(store, url, work_type)
         except ValueError as e:
-            typer.echo(str(e))  # martwy/zablokowany link — czytelnie, bez traceback
+            typer.echo(str(e))  # dead/blocked link — readable, no traceback
             raise typer.Exit(1) from e
         _extract_or_reuse(store, ctx, source_id, created, work_type)
         return
     if not doi:
-        raise typer.BadParameter("podaj --doi, --url albo --orcid")
+        raise typer.BadParameter("provide --doi, --url or --orcid")
 
     fetched = fetch_by_doi(doi, contact_email=settings.contact_email)
     if full_text and fetched.oa_pdf_url:
         text = fetch_oa_fulltext(fetched.oa_pdf_url)
         if text:
             fetched = replace(fetched, full_text=text)
-            typer.echo(f"pobrano pełny tekst OA ({len(text)} znaków)")
+            typer.echo(f"fetched OA full text ({len(text)} characters)")
         else:
-            typer.echo("nie udało się pobrać pełnego tekstu OA — używam abstraktu")
+            typer.echo("could not fetch OA full text — using the abstract")
     elif full_text:
-        typer.echo("brak pełnego tekstu OA dla tego DOI — używam abstraktu")
+        typer.echo("no OA full text for this DOI — using the abstract")
 
     wt = work_type or fetched.work_type
     if wt is None:
-        raise typer.BadParameter("nie rozpoznano typu wytworu — podaj --type")
+        raise typer.BadParameter("work type not recognized — provide --type")
     if not fetched.full_text:
-        typer.echo("Uwaga: brak tekstu z API — nie ma z czego wydobywać faktów.")
+        typer.echo("Warning: no text from the API — nothing to extract facts from.")
     store, ctx = _context()
     source_id, created = source_from_fetched(store, fetched)
     _extract_or_reuse(store, ctx, source_id, created, wt)
@@ -149,13 +152,13 @@ def ingest(
 
 @app.command()
 def argue(
-    source_id: int = typer.Argument(..., help="id źródła (z imeto run/ingest)"),
+    source_id: int = typer.Argument(..., help="source id (from imeto run/ingest)"),
     criterion: str = typer.Option("kryterium_iii", "--criterion", "-c"),
     status: str = typer.Option(
-        "accepted", "--status", help="fakty: accepted | candidate | all"
+        "accepted", "--status", help="facts: accepted | candidate | all"
     ),
 ) -> None:
-    """Zbuduj argumenty ZA/PRZECIW/LUKI wg rubryki dla faktów źródła."""
+    """Build FOR/AGAINST/GAPS arguments per the rubric for a source's claims."""
     store, ctx = _context()
     claim_status = None if status == "all" else status
     result = ArgumenterPhase(source_id, criterion, claim_status).run(ctx)
@@ -168,39 +171,69 @@ def argue(
 
 
 @app.command()
-def corroborate(
-    source_id: int = typer.Argument(..., help="id źródła (z imeto run/ingest)"),
-    status: str = typer.Option("accepted", "--status", help="fakty: accepted | all"),
-    limit: int = typer.Option(3, "--limit", "-n", help="Kandydatów na fakt"),
+def suggest(
+    source_id: int = typer.Argument(..., help="source id (from imeto run/ingest)"),
+    criterion: str = typer.Option("kryterium_iii", "--criterion", "-c"),
+    status: str = typer.Option("accepted", "--status", help="facts: accepted | all"),
 ) -> None:
-    """Szukaj w sieci potwierdzeń społecznego wpływu zaakceptowanych faktów źródła."""
+    """Suggest leads and SAVE them on the claims (trail + editable query)."""
+    from imeto.phases.suggest import run_suggester
+
     store, ctx = _context()
     claim_status = None if status == "all" else status
+    leads = run_suggester(
+        store, ctx.llm, ctx.skills, source_id, criterion, claim_status
+    )
+    typer.echo(f"source {source_id}: {len(leads)} leads (saved)")
+    for lead in leads:
+        typer.echo(f"  • {lead.lead}")
+        typer.echo(f"    fact: {lead.statement}")
+        typer.echo(f"    query: {lead.query}")
+
+
+@app.command()
+def corroborate(
+    source_id: int = typer.Argument(..., help="source id (from imeto run/ingest)"),
+    status: str = typer.Option("accepted", "--status", help="facts: accepted | all"),
+    limit: int = typer.Option(3, "--limit", "-n", help="Candidates per fact"),
+    leads: bool = typer.Option(
+        True, "--leads/--no-leads", help="Run suggester first (saves leads)"
+    ),
+) -> None:
+    """Search the web for social-impact corroboration of a source's accepted claims."""
+    from imeto.phases.suggest import run_suggester
+
+    store, ctx = _context()
+    claim_status = None if status == "all" else status
+    if leads:
+        run_suggester(
+            store, ctx.llm, ctx.skills, source_id, "kryterium_iii", claim_status
+        )
     result = CorroboratePhase(source_id, claim_status, max_candidates=limit).run(ctx)
     typer.echo(result.summary)
     for eid in result.produced:
         ev = store.get_evidence(eid)
         src = store.get_source(ev.source_id)
         typer.echo(f"  ✓ {src.local_identifier}")
-        typer.echo(f'    „{ev.quote}”')
+        typer.echo(f"    „{ev.quote}”")
 
 
 @app.command("eval")
 def evaluate(
-    golden_dir: str = typer.Option("tests/golden", "--golden", help="Katalog golden"),
-    repeat: int = typer.Option(1, "--repeat", "-n", help="Powtórzeń na przypadek"),
+    golden_dir: str = typer.Option("tests/golden", "--golden", help="Golden directory"),
+    repeat: int = typer.Option(1, "--repeat", "-n", help="Repeats per case"),
 ) -> None:
-    """Zmierz jakość ekstrakcji na golden secie (recall / precyzja / rodzaj).
+    """Measure extraction quality on the golden set (recall / precision / kind).
 
-    Model bywa niedeterministyczny nawet przy temp=0 — użyj --repeat N (np. 5),
-    by uśrednić po N przebiegach i zobaczyć rozrzut."""
+    The model can be non-deterministic even at temp=0 — use --repeat N (e.g. 5)
+    to average over N runs and see the spread."""
     from statistics import mean
 
     from imeto.obs.eval import load_golden, run_case
 
     cases = load_golden(golden_dir)
     if not cases:
-        typer.echo(f"brak przypadków w {golden_dir}")
+        typer.echo(f"no cases in {golden_dir}")
         raise typer.Exit(1)
     llm, skills = _llm(), SkillRegistry(settings.knowledge_dir)
     all_r, all_p, all_k = [], [], []
@@ -220,17 +253,17 @@ def evaluate(
         all_p.append(mean(p))
         all_k.append(mean(k))
     typer.echo(
-        f"{'RAZEM':24} recall={mean(all_r):.2f} prec={mean(all_p):.2f} "
+        f"{'TOTAL':24} recall={mean(all_r):.2f} prec={mean(all_p):.2f} "
         f"kind={mean(all_k):.2f}"
     )
 
 
 @app.command()
 def search(
-    query: str = typer.Argument(..., help="Zapytanie — szukaj dowodów wpływu"),
-    limit: int = typer.Option(8, "--limit", "-n", help="Liczba kandydatów"),
+    query: str = typer.Argument(..., help="Query — search for impact evidence"),
+    limit: int = typer.Option(8, "--limit", "-n", help="Number of candidates"),
 ) -> None:
-    """Wyszukaj w sieci kandydatów na dowody (człowiek decyduje, co jest dowodem)."""
+    """Search the web for evidence candidates (a human decides what is evidence)."""
     from imeto.tools.web_search import web_search
 
     for r in web_search(query, max_results=limit):
@@ -242,8 +275,8 @@ def search(
 
 @app.command()
 def ui() -> None:
-    """Uruchom interfejs Gradio (próg człowieka: akceptuj/odrzuć kandydatów)."""
-    from imeto.ui.app import launch  # lazy: Gradio ciągniemy tylko przy uruchomieniu UI
+    """Launch the Gradio interface (human gate: accept/reject candidates)."""
+    from imeto.ui.app import launch  # lazy: pull in Gradio only when the UI starts
 
     launch()
 

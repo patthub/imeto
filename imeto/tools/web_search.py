@@ -1,12 +1,12 @@
-"""Wyszukiwanie dowodów wpływu (§10). Zwraca KANDYDATÓW, nie werdykty — człowiek
-decyduje, co jest dowodem (Z1). Backend jest wymienny: domyślnie DuckDuckGo (bez
-klucza, do POC), później API z kluczem lub konektor on-prem — wystarczy podmienić
-funkcję `backend`."""
+"""Searching for impact evidence (§10). Returns CANDIDATES, not verdicts — a human
+decides what is evidence (Z1). The backend is swappable: DuckDuckGo by default (no
+key, for the POC), later a keyed API or an on-prem connector — just swap the
+`backend` function."""
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-# backend: (query, max_results) -> iterowalne słowniki z kluczami title/href/body
+# backend: (query, max_results) -> iterable of dicts with keys title/href/body
 Backend = Callable[[str, int], Iterable[dict[str, str]]]
 
 
@@ -27,7 +27,7 @@ def _ddg(query: str, max_results: int) -> Iterable[dict[str, str]]:
 def web_search(
     query: str, max_results: int = 8, backend: Backend = _ddg
 ) -> list[SearchResult]:
-    """Zwraca listę kandydatów (tytuł, url, snippet) dla zapytania."""
+    """Returns a list of candidates (title, url, snippet) for the query."""
     return [
         SearchResult(
             title=r.get("title", ""),

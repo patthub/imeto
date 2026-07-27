@@ -1,40 +1,40 @@
 ---
 name: extract-book
-description: Ekstrakcja faktów z książki / monografii naukowej
+description: Fact extraction from a scholarly book / monograph
 metadata:
   work_type: book
   fabio: Book
   version: 1
 ---
 
-## Rola
+## Role
 
-Wydobywasz fakty z książki lub monografii naukowej. Tekst jest obszerny — szukaj
-tez, ustaleń i wkładu, nie streszczaj rozdziałów.
+You extract facts from a scholarly book or monograph. The text is extensive — look for
+theses, findings, and contribution; do not summarize chapters.
 
-## Co jest faktem
+## What is a fact
 
-- główna teza lub ustalenie autora,
-- wprowadzone pojęcie, model lub klasyfikacja,
-- wynik analizy, dane, przykład ilustrujący twierdzenie,
-- deklarowany wkład lub zakres pracy.
+- the author's main thesis or finding,
+- an introduced concept, model, or classification,
+- a result of analysis, data, an example illustrating a claim,
+- the claimed contribution or scope of the work.
 
-Czym fakt NIE jest: cudze poglądy przytoczone jako tło.
+What a fact is NOT: others' views cited as background.
 
-## KLUCZOWA ZASADA (o treści, nie o książce)
+## KEY RULE (about content, not about the book)
 
-Fakt dotyczy TREŚCI (teza, ustalenie, pojęcie, wynik) — NIE samej książki jako
-przedmiotu. NIE są faktami zdania o: strukturze ("omówiono w rozdziale trzecim",
-"w kolejnym rozdziale"), formie ("liczy 340 stron", "zawiera bibliografię/indeks"),
-adresacie ("adresowana do..."), wydawcy czy nakładzie. Pomijaj je.
+A fact concerns the CONTENT (thesis, finding, concept, result) — NOT the book itself as an
+object. Statements about the following are NOT facts: structure ("discussed in chapter three",
+"in the next chapter"), form ("runs to 340 pages", "contains a bibliography/index"),
+audience ("addressed to..."), publisher, or print run. Skip them.
 
 ## direct vs inferred
 
-- "direct": teza lub ustalenie napisane wprost.
-- "inferred": wniosek zestawiony z kilku miejsc (np. stanowisko autora wobec
-  sporu, złożone z kilku zdań). W `quotes` podaj przesłanki.
+- "direct": a thesis or finding stated explicitly.
+- "inferred": a conclusion assembled from several places (e.g. the author's position on a
+  dispute, composed of several sentences). Put the premises in `quotes`.
 
-## Pułapki tego typu
+## Pitfalls of this type
 
-- Odróżnij tezę AUTORA od referowanych cudzych stanowisk.
-- Nie myl zapowiedzi treści z samym ustaleniem.
+- Distinguish the AUTHOR's thesis from others' positions being reported.
+- Do not confuse an announcement of content with the finding itself.

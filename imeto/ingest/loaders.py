@@ -1,12 +1,12 @@
-"""Kotwice metadanych — pobieranie wytworów naukowych przez publiczne API.
+"""Metadata anchors — fetching scholarly works via public APIs.
 
-- OpenAlex: główne źródło treści (tytuł, abstrakt, typ, status OA) po DOI.
-- ORCID: punkt wejścia — lista prac danego badacza (zwraca DOI-e do rozwinięcia).
+- OpenAlex: primary content source (title, abstract, type, OA status) by DOI.
+- ORCID: entry point — list of a researcher's works (returns DOIs to expand).
 
-TWARDE OGRANICZENIE (ustalenie projektowe): z API mamy zwykle tylko ABSTRAKT, nie
-pełny tekst. Fakty wolno wydobywać wyłącznie z tekstu, który faktycznie posiadamy —
-więc `full_text` to na razie abstrakt. Dociąganie pełnego tekstu Open Access to
-osobny, późniejszy krok. Formaty bez warstwy tekstowej są poza zakresem."""
+HARD LIMIT (design decision): the APIs usually give us only the ABSTRACT, not the
+full text. Facts may be extracted only from text we actually hold — so for now
+`full_text` is the abstract. Pulling Open Access full text is a separate, later
+step. Formats without a text layer are out of scope."""
 
 from dataclasses import dataclass, field
 
@@ -18,7 +18,7 @@ from imeto.worktypes import FABIO, WorkType
 OPENALEX = "https://api.openalex.org"
 ORCID = "https://pub.orcid.org/v3.0"
 
-# typ OpenAlex -> nasz WorkType (podzbiór, który umiemy ekstrahować skillem)
+# OpenAlex type -> our WorkType (subset we can extract with a skill)
 _OPENALEX_TYPE: dict[str, WorkType] = {
     "article": WorkType.article,
     "report": WorkType.report,
@@ -28,7 +28,7 @@ _FABIO_FALLBACK = "http://purl.org/spar/fabio/Expression"
 
 @dataclass
 class FetchedWork:
-    """Wytwór pobrany z API, gotowy do zapisu jako Source. `full_text` = abstrakt."""
+    """Work fetched from an API, ready to store as a Source. `full_text` = abstract."""
 
     local_identifier: str
     title: str | None
@@ -36,14 +36,14 @@ class FetchedWork:
     fabio_type: str
     language: str | None
     identifiers: list[dict[str, str]] = field(default_factory=list)
-    # najlepsze dopasowanie typu do skillu ekstrakcji; None = człowiek musi wskazać
+    # best type match for the extraction skill; None = a human must pick
     work_type: WorkType | None = None
     is_oa: bool = False
-    oa_pdf_url: str | None = None  # pełny tekst OA (PDF), jeśli dostępny
+    oa_pdf_url: str | None = None  # OA full text (PDF), if available
 
 
 def _abstract_from_index(index: dict[str, list[int]] | None) -> str:
-    """Odtwarza abstrakt z odwróconego indeksu OpenAlex (słowo -> pozycje)."""
+    """Rebuilds the abstract from OpenAlex's inverted index (word -> positions)."""
     if not index:
         return ""
     positioned = sorted(
@@ -76,7 +76,7 @@ def fetch_by_doi(
     contact_email: str | None = None,
     client: httpx.Client | None = None,
 ) -> FetchedWork:
-    """Pobiera metadane i abstrakt wytworu z OpenAlex po DOI."""
+    """Fetches a work's metadata and abstract from OpenAlex by DOI."""
     doi_clean = doi.strip().removeprefix("https://doi.org/")
     doi_clean = doi_clean.removeprefix("http://doi.org/")
     params = {"mailto": contact_email} if contact_email else None
@@ -107,8 +107,8 @@ def fetch_by_doi(
 def fetch_oa_fulltext(
     pdf_url: str, *, client: httpx.Client | None = None
 ) -> str | None:
-    """Pobiera i parsuje pełny tekst OA (PDF). Zwraca None, gdy się nie uda —
-    wtedy dzwoniący korzysta z abstraktu. Tylko PDF (HTML/landing poza zakresem)."""
+    """Fetches and parses OA full text (PDF). Returns None on failure — then the
+    caller falls back to the abstract. PDF only (HTML/landing out of scope)."""
     own = client is None
     c = client or httpx.Client(timeout=60.0, follow_redirects=True)
     try:
@@ -119,8 +119,8 @@ def fetch_oa_fulltext(
             return None
         return parse_pdf_bytes(resp.content)
     except Exception:
-        # ponytail: OA PDF-y bywają zawodne (redirecty, zepsute pliki) —
-        #           każda porażka -> None, fallback do abstraktu, nigdy crash.
+        # ponytail: OA PDFs are flaky (redirects, corrupt files) —
+        #           any failure -> None, fall back to the abstract, never crash.
         return None
     finally:
         if own:
@@ -130,7 +130,7 @@ def fetch_oa_fulltext(
 def fetch_works_by_orcid(
     orcid: str, *, client: httpx.Client | None = None
 ) -> list[str]:
-    """Zwraca listę DOI-ów prac powiązanych z danym ORCID (punkt wejścia)."""
+    """Returns the DOIs of works linked to a given ORCID (entry point)."""
     data = _get(
         f"{ORCID}/{orcid.strip()}/works",
         params=None,

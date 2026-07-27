@@ -1,15 +1,15 @@
 {
-  "fragment": "Celem projektu jest przeszkolenie 200 nauczycieli. Wnioskowana kwota wynosi 480 000 zł.",
+  "fragment": "The goal of the project is to train 200 teachers. The requested amount is PLN 480,000.",
   "facts": [
     {
-      "statement": "Planowany cel: przeszkolenie 200 nauczycieli.",
+      "statement": "Planned goal: training 200 teachers.",
       "kind": "direct",
-      "quotes": ["Celem projektu jest przeszkolenie 200 nauczycieli"]
+      "quotes": ["The goal of the project is to train 200 teachers"]
     },
     {
-      "statement": "Wnioskowana kwota: 480 000 zł.",
+      "statement": "Requested amount: PLN 480,000.",
       "kind": "direct",
-      "quotes": ["Wnioskowana kwota wynosi 480 000 zł"]
+      "quotes": ["The requested amount is PLN 480,000"]
     }
   ]
 }

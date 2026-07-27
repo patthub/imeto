@@ -1,35 +1,35 @@
 ---
 name: extract-report
-description: Ekstrakcja faktów ze sprawozdania / raportu z działalności
+description: Fact extraction from an activity report / statement of activities
 metadata:
   work_type: report
   fabio: Report
   version: 1
 ---
 
-## Rola
+## Role
 
-Wydobywasz fakty ze sprawozdania lub raportu z działalności. Interesują Cię
-dokonania: co zrobiono, ile, kiedy i z jakim skutkiem.
+You extract facts from an activity report or statement of activities. You care about
+achievements: what was done, how much, when, and with what effect.
 
-## Co jest faktem
+## What is a fact
 
-- zrealizowane działanie (co konkretnie zrobiono),
-- liczby: uczestnicy, wydarzenia, budżet, nakłady, zasięg,
-- daty i okresy realizacji,
-- osiągnięty rezultat, nawiązana współpraca, otrzymana nagroda.
+- a completed action (what specifically was done),
+- numbers: participants, events, budget, expenditures, reach,
+- dates and periods of execution,
+- an achieved result, an established collaboration, a received award.
 
-Czym fakt NIE jest: plany i zamiary na przyszłość (to nie dokonanie), ogólne
-deklaracje misji, opisy bez konkretu.
+What a fact is NOT: plans and intentions for the future (that is not an achievement), general
+mission statements, descriptions with no specifics.
 
 ## direct vs inferred
 
-- "direct": działanie lub liczba napisane w tekście wprost.
-- "inferred": rezultat zsumowany lub zestawiony z kilku pozycji (np. łączna
-  liczba uczestników z kilku wydarzeń). W `quotes` podaj wtedy przesłanki.
+- "direct": an action or number stated explicitly in the text.
+- "inferred": a result summed or assembled from several items (e.g. the total
+  number of participants across several events). In that case, put the premises in `quotes`.
 
-## Pułapki tego typu
+## Pitfalls of this type
 
-- Odróżnij zrealizowane od planowanego: "zamierzamy", "planujemy" ≠ fakt dokonany.
-- Sumowanie liczb w domyśle to "inferred", nie "direct".
-- Nie zawyżaj: "ponad 15 000" zapisz tak, jak w tekście, nie jako dokładne 15 000.
+- Distinguish the completed from the planned: "we intend to", "we plan to" ≠ an accomplished fact.
+- Summing numbers implicitly is "inferred", not "direct".
+- Do not overstate: write "over 15,000" exactly as in the text, not as an exact 15,000.

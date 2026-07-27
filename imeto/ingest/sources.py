@@ -1,6 +1,6 @@
-"""Pozyskanie źródła do bazy — z pliku lokalnego albo z API (FetchedWork).
-Zwraca `(source_id, created)`; import jest idempotentny po `local_identifier`
-(§6.4) — powtórny import tego samego źródła nie tworzy duplikatu."""
+"""Ingesting a source into the store — from a local file or an API (FetchedWork).
+Returns `(source_id, created)`; import is idempotent on `local_identifier`
+(§6.4) — re-importing the same source creates no duplicate."""
 
 from pathlib import Path
 
@@ -35,8 +35,8 @@ def source_from_text(
     text: str,
     fabio_type: str = FABIO_WEBPAGE,
 ) -> tuple[int, bool]:
-    """Zapisuje źródło z JUŻ pobranego tekstu (np. strona-dowód przy korroboracji,
-    bez ponownego pobierania). Idempotentne po identyfikatorze."""
+    """Stores a source from ALREADY-fetched text (e.g. an evidence page during
+    corroboration, without re-fetching). Idempotent on the identifier."""
     existing = store.source_by_local_identifier(identifier)
     if existing is not None:
         assert existing.id is not None
@@ -50,14 +50,14 @@ def source_from_text(
 def source_from_url(
     store: ProvenanceStore, url: str, work_type: WorkType
 ) -> tuple[int, bool]:
-    """Pobiera stronę WWW (dowód wpływu) i zapisuje jako źródło. Idempotentne po url."""
+    """Fetches a web page (impact evidence), stores it as a source. Idempotent."""
     existing = store.source_by_local_identifier(url)
     if existing is not None:
         assert existing.id is not None
         return existing.id, False
     text = fetch_url_text(url)
     if not text:
-        raise ValueError(f"nie udało się pobrać tekstu z {url}")
+        raise ValueError(f"could not fetch text from {url}")
     sid = store.add_source(
         Source(local_identifier=url, full_text=text, fabio_type=FABIO[work_type])
     )

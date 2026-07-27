@@ -1,6 +1,6 @@
-"""Typy wytworów naukowych. Człowiek wybiera typ przy imporcie; typ decyduje o
-klasie FaBiO źródła oraz o tym, który skill ekstrakcji (`knowledge/extraction/<typ>.md`)
-zostanie doklejony do promptu."""
+"""Scholarly work types. A human picks the type at import; the type decides the
+source's FaBiO class and which extraction skill (`knowledge/extraction/<type>.md`)
+gets appended to the prompt."""
 
 from enum import StrEnum
 
@@ -14,7 +14,7 @@ class WorkType(StrEnum):
     presentation = "presentation"
 
 
-# typ wytworu -> klasa FaBiO (URI), zapisywana jako Source.fabio_type
+# work type -> FaBiO class (URI), stored as Source.fabio_type
 FABIO: dict[WorkType, str] = {
     WorkType.article: "http://purl.org/spar/fabio/JournalArticle",
     WorkType.report: "http://purl.org/spar/fabio/Report",

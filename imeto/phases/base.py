@@ -1,5 +1,5 @@
-"""Kontrakt fazy potoku (§5.1). Każda faza jest wymienna i testowalna w izolacji
-(atrapa `llm`, tymczasowy `store`). Fazy zależą od rdzenia, nigdy odwrotnie."""
+"""Pipeline phase contract (§5.1). Every phase is swappable and testable in isolation
+(a mock `llm`, a temporary `store`). Phases depend on the core, never the reverse."""
 
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -14,16 +14,16 @@ class PhaseContext:
     store: ProvenanceStore
     llm: LLMClient
     skills: SkillRegistry
-    # ponytail: tools/dossier_id dołożyć, gdy powstaną (ToolRegistry, maszyna stanów) —
-    #           teraz byłyby martwymi polami.
+    # ponytail: add tools/dossier_id once they exist (ToolRegistry, state machine) —
+    #           right now they would be dead fields.
 
 
 @dataclass
 class PhaseResult:
     ok: bool
     summary: str
-    produced: list[int] = field(default_factory=list)  # id rekordów w provenance
-    needs_human: bool = False  # czy wymaga przejścia przez próg
+    produced: list[int] = field(default_factory=list)  # ids of provenance records
+    needs_human: bool = False  # whether it must pass through the gate
 
 
 class Phase(Protocol):

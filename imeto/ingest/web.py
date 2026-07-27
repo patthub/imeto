@@ -1,19 +1,19 @@
-"""Pobieranie i wyciąganie tekstu ze stron WWW (dowody wpływu z sieci).
+"""Fetching and extracting text from web pages (impact evidence from the web).
 
-PDF parsujemy jak plik lokalny; HTML czyścimy `trafilatura` do głównego tekstu
-(odrzuca menu/boilerplate). Czysty tekst jest konieczny do dosłownego kotwiczenia
-cytatów — ten sam powód, co `x_tolerance` przy PDF."""
+PDFs are parsed like a local file; HTML is cleaned with `trafilatura` down to the
+main text (drops menus/boilerplate). Clean text is required for verbatim quote
+anchoring — the same reason as `x_tolerance` for PDFs."""
 
 import httpx
 
 from imeto.ingest.parsing import parse_pdf_bytes
 
-_UA = "IMeTo/0.1 (research; evidence anchoring)"  # ASCII: nagłówki HTTP nie są UTF-8
+_UA = "IMeTo/0.1 (research; evidence anchoring)"  # ASCII: HTTP headers aren't UTF-8
 
 
 def fetch_url_text(url: str, *, client: httpx.Client | None = None) -> str | None:
-    """Pobiera stronę i zwraca jej tekst (PDF lub główny tekst HTML). None przy
-    porażce — dzwoniący decyduje, co zrobić; nigdy nie przerywa."""
+    """Fetches a page and returns its text (PDF or the main HTML text). None on
+    failure — the caller decides what to do; never aborts."""
     own = client is None
     c = client or httpx.Client(timeout=60.0, follow_redirects=True)
     try:
@@ -27,7 +27,7 @@ def fetch_url_text(url: str, *, client: httpx.Client | None = None) -> str | Non
         text: str | None = trafilatura.extract(resp.text)
         return text
     except Exception:
-        # ponytail: strony bywają zawodne (blokady, śmieciowy HTML) — porażka -> None.
+        # ponytail: pages are flaky (blocks, junk HTML) — failure -> None.
         return None
     finally:
         if own:

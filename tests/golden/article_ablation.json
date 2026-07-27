@@ -1,10 +1,10 @@
 {
   "name": "article_ablation",
   "work_type": "article",
-  "text": "Zaproponowana architektura osiągnęła F1 równy 0.89 na zbiorze testowym. Usunięcie warstwy uwagi obniżyło F1 do 0.81. Model trenowano przez 40 epok na ośmiu kartach GPU.",
+  "text": "The proposed architecture achieved an F1 of 0.89 on the test set. Removing the attention layer lowered F1 to 0.81. The model was trained for 40 epochs on eight GPUs.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["F1 równy 0.89"]},
-    {"kind": "direct", "quote_substrings": ["obniżyło F1 do 0.81"]},
-    {"kind": "direct", "quote_substrings": ["40 epok"]}
+    {"kind": "direct", "quote_substrings": ["F1 of 0.89"]},
+    {"kind": "direct", "quote_substrings": ["lowered F1 to 0.81"]},
+    {"kind": "direct", "quote_substrings": ["40 epochs"]}
   ]
 }

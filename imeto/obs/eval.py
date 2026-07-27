@@ -1,8 +1,8 @@
-"""Golden-set eval (§12) — mierzy jakość ekstrakcji własnym skryptem, bez chmury.
+"""Golden-set eval (§12) — measures extraction quality with our own script, no cloud.
 
-`score()` jest czyste i testowalne bez modelu (dopasowuje fakty po pokryciu gruntów,
-nie po dosłownej treści statement). `run_case()` puszcza prawdziwy model na przypadkach
-z `tests/golden/*.json` i liczy metryki: pokrycie, precyzję i trafność rodzaju."""
+`score()` is pure and testable without a model (matches facts by grounds coverage,
+not by verbatim statement content). `run_case()` runs a real model on the cases in
+`tests/golden/*.json` and computes metrics: recall, precision, and kind accuracy."""
 
 import json
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ from imeto.worktypes import WorkType
 @dataclass
 class ExpectedFact:
     kind: str
-    quote_substrings: list[str]  # dystynktywne fragmenty spodziewane w gruntach
+    quote_substrings: list[str]  # distinctive fragments expected in the grounds
 
 
 @dataclass
@@ -46,8 +46,8 @@ def _hit(grounds: list[str], substrings: list[str]) -> bool:
 
 
 def score(predicted: list[PredictedFact], expected: list[ExpectedFact]) -> Metrics:
-    """Dopasowanie zachłanne: fakt spodziewany trafia, gdy któryś jeszcze niezużyty
-    fakt przewidziany ma w gruntach jeden z jego dystynktywnych fragmentów."""
+    """Greedy matching: an expected fact hits when some not-yet-used predicted
+    fact has one of its distinctive fragments in its grounds."""
     used: set[int] = set()
     kind_ok = 0
     for exp in expected:
@@ -91,8 +91,8 @@ def load_golden(directory: str | Path) -> list[dict[str, Any]]:
 
 
 def run_case(case: dict[str, Any], llm: LLMClient, skills: SkillRegistry) -> Metrics:
-    """Uruchamia ekstrakcję na jednym przypadku (świeża baza in-memory) i ocenia."""
-    store = ProvenanceStore()  # in-memory — nie dotyka realnej bazy
+    """Runs extraction on a single case (fresh in-memory store) and scores it."""
+    store = ProvenanceStore()  # in-memory — doesn't touch the real store
     sid = store.add_source(
         Source(local_identifier=case["name"], full_text=case["text"])
     )

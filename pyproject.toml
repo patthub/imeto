@@ -18,7 +18,7 @@ dependencies = [
 ui = ["gradio>=4.0"]
 api = ["fastapi>=0.115", "uvicorn>=0.30"]
 mcp = ["mcp>=1.2"]
-# wyszukiwanie dowodów wpływu: DuckDuckGo (bez klucza) + trafilatura (HTML->tekst)
+# impact-evidence search: DuckDuckGo (no key) + trafilatura (HTML->text)
 search = ["ddgs>=5", "trafilatura>=1.6"]
 postgres = ["psycopg>=3.2", "alembic>=1.13"]
 embed = ["sentence-transformers>=3.0"]
@@ -38,7 +38,7 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-"imeto/cli.py" = ["B008"]  # typer.Argument w defaults to idiom Typera
+"imeto/cli.py" = ["B008"]  # typer.Argument in defaults is the Typer idiom
 
 [tool.mypy]
 python_version = "3.12"

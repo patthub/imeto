@@ -1,32 +1,32 @@
 ---
 name: extract-presentation
-description: Ekstrakcja faktów z prezentacji / slajdów
+description: Fact extraction from a presentation / slides
 metadata:
   work_type: presentation
   fabio: Presentation
   version: 1
 ---
 
-## Rola
+## Role
 
-Wydobywasz fakty z prezentacji (slajdów). Tekst jest punktowy i skrótowy —
-cytuj dosłownie treść wypunktowań, nie parafrazuj slajdu.
+You extract facts from a presentation (slides). The text is bulleted and abbreviated —
+quote the content of the bullet points verbatim; do not paraphrase the slide.
 
-## Co jest faktem
+## What is a fact
 
-- twierdzenie lub wynik z wypunktowania,
-- kluczowa liczba lub dana ze slajdu,
-- wniosek/rekomendacja z podsumowania.
+- a claim or result from a bullet point,
+- a key number or datum from the slide,
+- a conclusion/recommendation from the summary.
 
-Czym fakt NIE jest: tytuły slajdów, agenda, śródtytuły, nazwy sekcji.
+What a fact is NOT: slide titles, agenda, subheadings, section names.
 
 ## direct vs inferred
 
-- "direct": twierdzenie z wypunktowania podane wprost.
-- "inferred": wniosek zestawiony z kilku punktów lub slajdów. W `quotes` podaj
-  przesłanki.
+- "direct": a claim from a bullet point stated explicitly.
+- "inferred": a conclusion assembled from several points or slides. Put the
+  premises in `quotes`.
 
-## Pułapki tego typu
+## Pitfalls of this type
 
-- Punkty bywają skrótami myślowymi — nie dopowiadaj tego, czego nie ma.
-- Odróżnij tytuł slajdu od twierdzenia (tytuł to nie fakt).
+- Bullet points are often mental shorthand — do not supply what is not there.
+- Distinguish a slide title from a claim (a title is not a fact).

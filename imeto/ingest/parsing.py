@@ -1,8 +1,8 @@
-"""Wczytywanie dokumentów PDF/DOCX do jednego kanonicznego `full_text`.
+"""Loading PDF/DOCX documents into a single canonical `full_text`.
 
-Offsety cytatów (Evidence.start/end) to indeksy znaków w tym stringu — to samo,
-na czym operuje `core.span.find_span`. Dlatego parser zwraca po prostu tekst;
-osobnej mapy pozycja→strona nie budujemy (§ POC: niepotrzebna warstwa)."""
+Quote offsets (Evidence.start/end) are character indices into this string — the
+same thing `core.span.find_span` operates on. So the parser just returns text;
+we build no separate position→page map (§ POC: an unneeded layer)."""
 
 import io
 from pathlib import Path
@@ -12,31 +12,32 @@ from docx import Document
 
 
 def parse_document(path: str | Path) -> str:
-    """Zwraca pełny tekst dokumentu. Dispatch po rozszerzeniu."""
+    """Returns the document's full text. Dispatches on the extension."""
     p = Path(path)
     ext = p.suffix.lower()
     if ext == ".docx":
         return _parse_docx(p)
     if ext == ".pdf":
         return _parse_pdf(p)
-    raise ValueError(f"nieobsługiwany format: {ext!r} (obsługiwane: .pdf, .docx)")
+    raise ValueError(f"unsupported format: {ext!r} (supported: .pdf, .docx)")
 
 
 def _parse_docx(p: Path) -> str:
     doc = Document(str(p))
-    # ponytail: same akapity — tabele/nagłówki dołożyć, gdy realny dokument ich wymaga.
+    # ponytail: paragraphs only — add tables/headers when a real document needs them.
     return "\n".join(para.text for para in doc.paragraphs)
 
 
-# x_tolerance=1 (zamiast domyślnych 3) rozdziela słowa w ciasno justowanym tekście
-# naukowym — inaczej pdfplumber skleja słowa ("0.21phenotypicdimensions"), co psuje
-# weryfikację cytatu. ponytail: knob strojenia; jeśli PDF-y naukowe zaczną wymagać
-# odczytu kolumn/tabel, dopiero wtedy SOTA (GROBID/docling), nie wcześniej.
+# x_tolerance=1 (instead of the default 3) separates words in tightly justified
+# scholarly text — otherwise pdfplumber glues words together
+# ("0.21phenotypicdimensions"), which breaks quote verification. ponytail: tuning
+# knob; only if scholarly PDFs start needing column/table reads reach for SOTA
+# (GROBID/docling), not before.
 PDF_X_TOLERANCE = 1.0
 
 
 def parse_pdf_bytes(data: bytes, x_tolerance: float = PDF_X_TOLERANCE) -> str:
-    """Parsuje PDF z bajtów (np. pobrany pełny tekst OA) — bez pliku tymczasowego."""
+    """Parses a PDF from bytes (e.g. fetched OA full text) — no temp file."""
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         return "\n".join(
             page.extract_text(x_tolerance=x_tolerance) or "" for page in pdf.pages

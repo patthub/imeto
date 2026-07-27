@@ -18,23 +18,23 @@ def _make_docx(path: Path, *paragraphs: str) -> Path:
 def test_parse_docx_returns_text(tmp_path: Path):
     p = _make_docx(
         tmp_path / "t.docx",
-        "Rada gminy przyjęła uchwałę nr 12.",
-        "W sprawie budżetu na rok 2025.",
+        "The council adopted resolution no. 12.",
+        "Regarding the budget for 2025.",
     )
     text = parse_document(p)
-    assert "uchwałę nr 12" in text
-    assert "budżetu na rok 2025" in text
+    assert "resolution no. 12" in text
+    assert "the budget for 2025" in text
 
 
 def test_parsed_text_is_anchorable(tmp_path: Path):
-    # integracja kroku 6 z krokiem 1: cytat z wczytanego tekstu daje się zakotwiczyć
-    p = _make_docx(tmp_path / "t.docx", "Rada gminy przyjęła uchwałę nr 12.")
+    # integration of step 6 with step 1: a quote from the loaded text can be anchored
+    p = _make_docx(tmp_path / "t.docx", "The council adopted resolution no. 12.")
     text = parse_document(p)
-    span = find_span(text, "przyjęła uchwałę nr 12")
+    span = find_span(text, "adopted resolution no. 12")
     assert span is not None
-    assert text[span[0] : span[1]] == "przyjęła uchwałę nr 12"
+    assert text[span[0] : span[1]] == "adopted resolution no. 12"
 
 
 def test_unknown_extension_rejected(tmp_path: Path):
     with pytest.raises(ValueError):
-        parse_document(tmp_path / "notatka.txt")
+        parse_document(tmp_path / "note.txt")

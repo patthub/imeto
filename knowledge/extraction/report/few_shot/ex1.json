@@ -1,10 +1,10 @@
 {
-  "fragment": "W ramach projektu przeszkolono 128 nauczycieli z 24 szkół w województwie mazowieckim.",
+  "fragment": "As part of the project, 128 teachers from 24 schools in the Mazowieckie Voivodeship were trained.",
   "facts": [
     {
-      "statement": "Przeszkolono 128 nauczycieli z 24 szkół.",
+      "statement": "128 teachers from 24 schools were trained.",
       "kind": "direct",
-      "quotes": ["przeszkolono 128 nauczycieli z 24 szkół w województwie mazowieckim"]
+      "quotes": ["128 teachers from 24 schools in the Mazowieckie Voivodeship were trained"]
     }
   ]
 }

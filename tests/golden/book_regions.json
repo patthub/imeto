@@ -1,9 +1,9 @@
 {
   "name": "book_regions",
   "work_type": "book",
-  "text": "Autor przytacza, że w regionie A powstało 15 nowych zakładów, a w regionie B tylko 4. Badanie objęło okres 1990–2005. Książka zawiera obszerną bibliografię.",
+  "text": "The author reports that region A saw 15 new plants established, while region B only 4. The study covered the period 1990–2005. The book contains an extensive bibliography.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["15 nowych zakładów", "regionie B tylko 4"]},
-    {"kind": "direct", "quote_substrings": ["okres 1990"]}
+    {"kind": "direct", "quote_substrings": ["15 new plants", "region B only 4"]},
+    {"kind": "direct", "quote_substrings": ["period 1990"]}
   ]
 }

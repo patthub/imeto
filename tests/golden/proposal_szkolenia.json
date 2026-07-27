@@ -1,10 +1,10 @@
 {
   "name": "proposal_szkolenia",
   "work_type": "proposal",
-  "text": "Celem projektu jest przeszkolenie 200 nauczycieli w zakresie edukacji cyfrowej. Wnioskowana kwota dofinansowania wynosi 480 000 złotych. Spodziewanym rezultatem jest opracowanie 3 otwartych podręczników.",
+  "text": "The project's goal is to train 200 teachers in digital education. The requested funding amount is PLN 480,000. The expected result is the development of 3 open textbooks.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["przeszkolenie 200 nauczycieli"]},
-    {"kind": "direct", "quote_substrings": ["480 000"]},
-    {"kind": "direct", "quote_substrings": ["3 otwartych podręczników"]}
+    {"kind": "direct", "quote_substrings": ["train 200 teachers"]},
+    {"kind": "direct", "quote_substrings": ["480,000"]},
+    {"kind": "direct", "quote_substrings": ["3 open textbooks"]}
   ]
 }

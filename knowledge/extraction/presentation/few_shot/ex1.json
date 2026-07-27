@@ -1,10 +1,10 @@
 {
-  "fragment": "• Przychód wzrósł o 30% r/r • Rekomendacja: rozszerzyć program na 5 województw",
+  "fragment": "• Revenue grew 30% YoY • Recommendation: expand the program to 5 voivodeships",
   "facts": [
     {
-      "statement": "Przychód wzrósł o 30% rok do roku.",
+      "statement": "Revenue grew 30% year over year.",
       "kind": "direct",
-      "quotes": ["Przychód wzrósł o 30% r/r"]
+      "quotes": ["Revenue grew 30% YoY"]
     }
   ]
 }

@@ -1,33 +1,33 @@
 from imeto.core.span import find_span
 
-SRC = "Rada gminy przyjęła uchwałę nr 12\nw sprawie budżetu na rok 2025."
+SRC = "The council adopted resolution no. 12\nregarding the budget for 2025."
 
 
 def test_exact_match_returns_offsets():
-    span = find_span(SRC, "przyjęła uchwałę nr 12")
+    span = find_span(SRC, "adopted resolution no. 12")
     assert span is not None
-    assert SRC[span[0] : span[1]] == "przyjęła uchwałę nr 12"
+    assert SRC[span[0] : span[1]] == "adopted resolution no. 12"
 
 
 def test_whitespace_collapsed_in_quote_still_matches():
-    # model zwinął newline i podwójne spacje do pojedynczych
-    span = find_span(SRC, "nr 12 w sprawie budżetu")
+    # model collapsed the newline and double spaces to single ones
+    span = find_span(SRC, "no. 12 regarding the budget")
     assert span is not None
-    # offsety wskazują na oryginał (z newline), nie na zwiniętą wersję
-    assert SRC[span[0] : span[1]] == "nr 12\nw sprawie budżetu"
+    # offsets point to the original (with newline), not the collapsed version
+    assert SRC[span[0] : span[1]] == "no. 12\nregarding the budget"
 
 
 def test_altered_non_whitespace_is_rejected():
-    assert find_span(SRC, "przyjęła uchwałę nr 13") is None  # 12 -> 13
+    assert find_span(SRC, "adopted resolution no. 13") is None  # 12 -> 13
 
 
 def test_case_sensitive():
-    assert find_span(SRC, "rada gminy") is None  # oryginał ma "Rada"
+    assert find_span(SRC, "the council") is None  # original has "The"
 
 
 def test_joined_words_rejected():
-    # spacja w cytacie, brak w źródle = modyfikacja, nie różnica białych znaków
-    assert find_span("radagminy", "rada gminy") is None
+    # space in the quote, none in the source = modification, not a whitespace difference
+    assert find_span("thecouncil", "the council") is None
 
 
 def test_empty_or_blank_quote_rejected():
@@ -36,28 +36,28 @@ def test_empty_or_blank_quote_rejected():
 
 
 def test_surrounding_whitespace_in_quote_ignored():
-    assert find_span(SRC, "  Rada gminy  ") is not None
+    assert find_span(SRC, "  The council  ") is not None
 
 
 def test_returns_first_occurrence():
-    span = find_span("ala ma ala", "ala")
+    span = find_span("cat and cat", "cat")
     assert span == (0, 3)
 
 
 def test_typographic_quotes_folded():
-    # źródło ma cudzysłowy drukarskie, cytat proste — treść ta sama
-    src = 'Projekt „Szkoła bez barier” ruszył w 2025.'
-    span = find_span(src, 'Projekt "Szkoła bez barier" ruszył')
+    # source has typographic quotes, quote has straight ones — same content
+    src = "Project „School without barriers” started in 2025."
+    span = find_span(src, 'Project "School without barriers" started')
     assert span is not None
-    # offset wskazuje ORYGINAŁ (z drukarskimi cudzysłowami)
-    assert src[span[0] : span[1]] == 'Projekt „Szkoła bez barier” ruszył'
+    # offset points to the ORIGINAL (with typographic quotes)
+    assert src[span[0] : span[1]] == "Project „School without barriers” started"
 
 
 def test_dash_variants_folded():
-    src = "okres 2020—2025 był kluczowy"  # em-dash w źródle
-    assert find_span(src, "okres 2020-2025 był") is not None  # dywiz w cytacie
+    src = "the period 2020—2025 was crucial"  # em-dash in the source
+    assert find_span(src, "the period 2020-2025 was") is not None  # hyphen in the quote
 
 
 def test_fold_is_symmetric():
-    # cytat z cudzysłowem drukarskim, źródło z prostym — też ma trafić
-    assert find_span('cel "X"', "cel „X”") is not None
+    # quote with typographic quotes, source with straight ones — must also match
+    assert find_span('goal "X"', "goal „X”") is not None

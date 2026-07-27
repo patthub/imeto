@@ -1,9 +1,9 @@
 {
   "name": "book_thesis",
   "work_type": "book",
-  "text": "Autor stawia tezę, że industrializacja regionu w latach 60. trwale zmieniła strukturę zatrudnienia. Analiza opiera się na danych z 12 powiatów. W rozdziale trzecim omówiono metodologię badania.",
+  "text": "The author advances the thesis that the industrialization of the region in the 1960s permanently changed the employment structure. The analysis is based on data from 12 districts. The third chapter discusses the study's methodology.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["trwale zmieniła strukturę zatrudnienia"]},
-    {"kind": "direct", "quote_substrings": ["12 powiatów"]}
+    {"kind": "direct", "quote_substrings": ["permanently changed the employment structure"]},
+    {"kind": "direct", "quote_substrings": ["12 districts"]}
   ]
 }

@@ -1,9 +1,9 @@
 {
   "name": "report_noise",
   "work_type": "report",
-  "text": "Niniejsze sprawozdanie przedstawia działalność Fundacji za rok 2025. W okresie sprawozdawczym zorganizowano 5 konferencji naukowych. Nasz zespół jest wysoce zaangażowany w realizację misji. W kolejnym roku planujemy uruchomić 3 nowe programy edukacyjne. Wydano recenzowaną publikację o zasięgu krajowym.",
+  "text": "This report presents the Foundation's activities for the year 2025. During the reporting period, 5 scientific conferences were organized. Our team is highly committed to carrying out the mission. Next year we plan to launch 3 new educational programs. A peer-reviewed publication with national reach was released.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["zorganizowano 5 konferencji"]},
-    {"kind": "direct", "quote_substrings": ["Wydano recenzowaną publikację"]}
+    {"kind": "direct", "quote_substrings": ["5 scientific conferences were organized"]},
+    {"kind": "direct", "quote_substrings": ["A peer-reviewed publication"]}
   ]
 }

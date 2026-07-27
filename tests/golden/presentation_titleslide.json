@@ -1,9 +1,9 @@
 {
   "name": "presentation_titleslide",
   "work_type": "presentation",
-  "text": "Tytuł: Wyniki projektu 2025. Wdrożono system w 8 placówkach. Koszt wdrożenia: 240 000 zł. Dziękujemy za uwagę.",
+  "text": "Title: 2025 Project Results. The system was deployed in 8 facilities. Deployment cost: PLN 240,000. Thank you for your attention.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["8 placówkach"]},
-    {"kind": "direct", "quote_substrings": ["240 000"]}
+    {"kind": "direct", "quote_substrings": ["8 facilities"]},
+    {"kind": "direct", "quote_substrings": ["240,000"]}
   ]
 }

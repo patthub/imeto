@@ -1,10 +1,10 @@
 {
   "name": "report_grants",
   "work_type": "report",
-  "text": "Fundacja pozyskała 3 granty na łączną kwotę 620 000 złotych. Zorganizowano warsztaty dla 90 uczestników. Nawiązano współpracę z 4 szkołami wyższymi. W planach na 2026 rok jest otwarcie nowego oddziału.",
+  "text": "The foundation obtained 3 grants for a total amount of PLN 620,000. Workshops were organized for 90 participants. Cooperation was established with 4 universities. The plans for 2026 include opening a new branch.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["3 granty", "620 000"]},
-    {"kind": "direct", "quote_substrings": ["90 uczestników"]},
-    {"kind": "direct", "quote_substrings": ["4 szkołami wyższymi"]}
+    {"kind": "direct", "quote_substrings": ["3 grants", "620,000"]},
+    {"kind": "direct", "quote_substrings": ["90 participants"]},
+    {"kind": "direct", "quote_substrings": ["4 universities"]}
   ]
 }

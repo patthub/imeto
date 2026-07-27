@@ -1,35 +1,53 @@
-"""Faza argumentera: zweryfikowane fakty → ocena wg rubryki (ZA/PRZECIW/LUKI).
+"""Argumenter phase: verified facts → rubric assessment (FOR/AGAINST/GAPS).
 
-Dyscyplina anty-halucynacyjna o poziom wyżej niż ekstrakcja: argument to rozumowanie
-modelu, więc nie da się go zweryfikować dosłownie. Zamiast tego wymagamy, by każdy
-argument ZA/PRZECIW **opierał się na podanych faktach** (`based_on`), które są już
-zweryfikowane i zaakceptowane. Argument bez faktu-gruntu (poza LUKĄ) jest odrzucany.
-Człowiek ocenia sam skok wnioskowy (próg)."""
+Anti-hallucination discipline one level above extraction: an argument is model
+reasoning, so it cannot be verified verbatim. Instead we require every FOR/AGAINST
+argument to **rest on the given facts** (`based_on`), which are already verified and
+accepted. An argument with no grounding fact (other than a GAP) is rejected. The human
+judges the inferential leap itself (the gate)."""
 
 from dataclasses import dataclass, field
 
+from imeto.core.provenance import Claim
 from imeto.core.schemas import Argumentation
 from imeto.phases.base import PhaseContext, PhaseResult
 
 ARGUE_SYSTEM = (
-    "Oceniasz dorobek według RUBRYKI (poniżej). Dostajesz ponumerowane FAKTY "
-    "(już zweryfikowane). Odnieś fakty do rubryki. Zwróć tylko JSON:\n"
-    '{"arguments": [{"side": "za|przeciw|luka", "statement": "...", '
+    "You assess the body of work according to the RUBRIC (below). You are given "
+    "numbered FACTS (already verified). A fact marked ✓CONFIRMED has external evidence "
+    "of impact (a quote from an independent source) — its impact is DOCUMENTED, not "
+    "merely declared; that is a stronger basis for a FOR argument. Relate the facts to "
+    "the rubric. Return only JSON:\n"
+    '{"arguments": [{"side": "for|against|gap", "statement": "...", '
     '"based_on": [1, 3]}]}\n'
-    "- side: za (fakty wspierają spełnienie kryterium) | przeciw (podważają) | "
-    "luka (istotny brak).\n"
-    "- statement: argument własnymi słowami, zwięźle.\n"
-    "- based_on: numery FAKTÓW, na których argument się opiera. Dla za/przeciw podaj "
-    "co najmniej jeden. Dla luka może być pusty (to wskazanie braku).\n"
-    "- Opieraj się WYŁĄCZNIE na podanych faktach; nie dodawaj informacji spoza nich."
+    "- side: for (facts support meeting the criterion) | against (they undermine it) | "
+    "gap (a significant gap, e.g. impact declared without evidence).\n"
+    "- statement: the argument in your own words, concisely.\n"
+    "- based_on: the numbers of the FACTS the argument rests on. For for/against give "
+    "at least one. For gap it may be empty (it indicates a gap).\n"
+    "- Rely EXCLUSIVELY on the given facts; do not add information beyond them."
 )
+
+
+def _facts_text(ctx: PhaseContext, claims: list[Claim]) -> str:
+    """Numbered facts; a fact with external corroboration (dossier internal+external)
+    gets a ✓CONFIRMED marker + quote — the argumenter weighs documented impact."""
+    lines: list[str] = []
+    for i, c in enumerate(claims, 1):
+        ext = ctx.store.external_evidence_for_claim(c.id) if c.id is not None else []
+        mark = " ✓CONFIRMED" if ext else ""
+        lines.append(f"[{i}]{mark} {c.statement}")
+        for ev in ext:
+            src = ctx.store.get_source(ev.source_id)
+            lines.append(f"    ↳ „{ev.quote}” — {src.local_identifier}")
+    return "\n".join(lines)
 
 
 @dataclass
 class ArgumenterPhase:
     source_id: int
     criterion: str = "kryterium_iii"
-    claim_status: str | None = "accepted"  # oceniamy fakty zaakceptowane
+    claim_status: str | None = "accepted"  # we assess accepted facts
     name: str = field(default="argue")
 
     def run(self, ctx: PhaseContext) -> PhaseResult:
@@ -37,13 +55,13 @@ class ArgumenterPhase:
         if not claims:
             return PhaseResult(
                 ok=False,
-                summary=f"źródło {self.source_id}: brak faktów do oceny "
+                summary=f"source {self.source_id}: no facts to assess "
                 f"(status={self.claim_status})",
             )
 
         rubric = ctx.skills.load(self.criterion, subdir="criteria")
-        system = f"{ARGUE_SYSTEM}\n\n## Rubryka\n{rubric}"
-        facts_text = "\n".join(f"[{i}] {c.statement}" for i, c in enumerate(claims, 1))
+        system = f"{ARGUE_SYSTEM}\n\n## Rubric\n{rubric}"
+        facts_text = _facts_text(ctx, claims)
         result = ctx.llm.structured(system, facts_text, Argumentation)
 
         idx_to_id: dict[int, int] = {}
@@ -54,24 +72,29 @@ class ArgumenterPhase:
         agent = ctx.llm.model
         produced: list[int] = []
         ungrounded = 0
-        counts = {"za": 0, "przeciw": 0, "luka": 0}
+        counts = {"for": 0, "against": 0, "gap": 0}
 
         for arg in result.arguments:
             claim_ids = [idx_to_id[i] for i in arg.based_on if i in idx_to_id]
-            if arg.side in ("za", "przeciw") and not claim_ids:
-                ungrounded += 1  # rozumowanie bez oparcia w faktach — odrzucamy
+            if arg.side in ("for", "against") and not claim_ids:
+                ungrounded += 1  # reasoning with no grounding in facts — reject
                 continue
             aid = ctx.store.add_argument(
-                self.source_id, self.criterion, arg.side, arg.statement, claim_ids,
-                activity=activity, agent=agent,
+                self.source_id,
+                self.criterion,
+                arg.side,
+                arg.statement,
+                claim_ids,
+                activity=activity,
+                agent=agent,
             )
             produced.append(aid)
             counts[arg.side] += 1
 
         summary = (
-            f"źródło {self.source_id} / {self.criterion}: "
-            f"{counts['za']} ZA, {counts['przeciw']} PRZECIW, {counts['luka']} LUKI "
-            f"({ungrounded} odrzuconych bez oparcia)"
+            f"source {self.source_id} / {self.criterion}: "
+            f"{counts['for']} FOR, {counts['against']} AGAINST, {counts['gap']} GAPS "
+            f"({ungrounded} rejected without grounding)"
         )
         return PhaseResult(
             ok=True, summary=summary, produced=produced, needs_human=True

@@ -10,8 +10,8 @@ metadata:
   work_type: article
 ---
 
-## Rola
-Wydobywasz fakty z artykułu.
+## Role
+You extract facts from the article.
 """
 
 
@@ -30,8 +30,8 @@ def _make_skill(root: Path, name: str, *, few_shot: dict | None = None) -> None:
 def test_load_strips_frontmatter(tmp_path: Path):
     _make_skill(tmp_path, "article")
     body = SkillRegistry(tmp_path).load("article")
-    assert body.startswith("## Rola")
-    assert "name: extract-article" not in body  # frontmatter zdjęty
+    assert body.startswith("## Role")
+    assert "name: extract-article" not in body  # frontmatter stripped
 
 
 def test_load_appends_few_shot(tmp_path: Path):
@@ -46,7 +46,7 @@ def test_load_appends_few_shot(tmp_path: Path):
         },
     )
     body = SkillRegistry(tmp_path).load("article")
-    assert "## Przykłady" in body
+    assert "## Examples" in body
     assert "Uzyskano 92%" in body
 
 
@@ -63,26 +63,28 @@ def test_list_skills(tmp_path: Path):
 
 
 def test_real_skills_present():
-    # każdy zdefiniowany WorkType MUSI mieć skill z treścią i przykładem
+    # every defined WorkType MUST have a skill with content and an example
     from imeto.worktypes import WorkType
 
     reg = SkillRegistry("knowledge")
     for wt in WorkType:
         loaded = reg.load(wt.value)
-        assert "## Rola" in loaded
-        assert "## Przykłady" in loaded
+        assert "## Role" in loaded
+        assert "## Examples" in loaded
 
 
 def test_loads_criterion_from_subdir(tmp_path: Path):
     d = tmp_path / "criteria" / "kryterium_iii"
     d.mkdir(parents=True)
-    (d / "SKILL.md").write_text("## Rubryka\ntreść", encoding="utf-8")
-    assert SkillRegistry(tmp_path).load("kryterium_iii", subdir="criteria").startswith(
-        "## Rubryka"
+    (d / "SKILL.md").write_text("## Rubric\ncontent", encoding="utf-8")
+    assert (
+        SkillRegistry(tmp_path)
+        .load("kryterium_iii", subdir="criteria")
+        .startswith("## Rubric")
     )
 
 
 def test_real_criterion_present():
     reg = SkillRegistry("knowledge")
     rubric = reg.load("kryterium_iii", subdir="criteria")
-    assert "wpływ" in rubric.lower()
+    assert "impact" in rubric.lower()

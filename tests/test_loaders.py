@@ -13,8 +13,8 @@ from imeto.worktypes import WorkType
 
 
 def test_abstract_reconstruction_from_inverted_index():
-    idx = {"Model": [0], "osiągnął": [1], "92%": [2]}
-    assert _abstract_from_index(idx) == "Model osiągnął 92%"
+    idx = {"Model": [0], "achieved": [1], "92%": [2]}
+    assert _abstract_from_index(idx) == "Model achieved 92%"
     assert _abstract_from_index(None) == ""
     assert _abstract_from_index({}) == ""
 
@@ -25,20 +25,20 @@ def test_fetch_by_doi_maps_fields():
         return_value=httpx.Response(
             200,
             json={
-                "title": "Wpływ edukacji cyfrowej",
+                "title": "Impact of digital education",
                 "type": "article",
-                "language": "pl",
+                "language": "en",
                 "ids": {"doi": "https://doi.org/10.1234/x", "openalex": "W1"},
-                "abstract_inverted_index": {"Przeszkolono": [0], "128": [1]},
+                "abstract_inverted_index": {"Trained": [0], "128": [1]},
             },
         )
     )
     work = fetch_by_doi("10.1234/x")
     assert isinstance(work, FetchedWork)
-    assert work.title == "Wpływ edukacji cyfrowej"
+    assert work.title == "Impact of digital education"
     assert work.work_type == WorkType.article
     assert work.fabio_type.endswith("JournalArticle")
-    assert work.full_text == "Przeszkolono 128"
+    assert work.full_text == "Trained 128"
     assert work.local_identifier == "https://doi.org/10.1234/x"
     assert {"scheme": "doi", "value": "https://doi.org/10.1234/x"} in work.identifiers
 
@@ -46,10 +46,10 @@ def test_fetch_by_doi_maps_fields():
 @respx.mock
 def test_fetch_by_doi_unknown_type_has_no_worktype():
     respx.get("https://api.openalex.org/works/doi:10.1/book").mock(
-        return_value=httpx.Response(200, json={"title": "Książka", "type": "book"})
+        return_value=httpx.Response(200, json={"title": "Book", "type": "book"})
     )
     work = fetch_by_doi("https://doi.org/10.1/book")
-    assert work.work_type is None  # człowiek musi wskazać typ
+    assert work.work_type is None  # human must specify the type
     assert work.fabio_type.endswith("Expression")  # fallback
 
 
@@ -59,7 +59,7 @@ def test_fetch_by_doi_extracts_oa_pdf_url():
         return_value=httpx.Response(
             200,
             json={
-                "title": "Praca OA",
+                "title": "OA Work",
                 "type": "article",
                 "open_access": {"is_oa": True, "oa_url": "https://x/paper.pdf"},
                 "best_oa_location": {"pdf_url": "https://x/best.pdf"},
@@ -68,18 +68,18 @@ def test_fetch_by_doi_extracts_oa_pdf_url():
     )
     w = fetch_by_doi("10.1/oa")
     assert w.is_oa is True
-    assert w.oa_pdf_url == "https://x/best.pdf"  # best_oa_location ma pierwszeństwo
+    assert w.oa_pdf_url == "https://x/best.pdf"  # best_oa_location takes precedence
 
 
 @respx.mock
 def test_fetch_oa_fulltext_parses_pdf(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("imeto.ingest.loaders.parse_pdf_bytes", lambda b: "PEŁNY TEKST")
+    monkeypatch.setattr("imeto.ingest.loaders.parse_pdf_bytes", lambda b: "FULL TEXT")
     respx.get("https://x/best.pdf").mock(
         return_value=httpx.Response(
             200, content=b"%PDF-fake", headers={"content-type": "application/pdf"}
         )
     )
-    assert fetch_oa_fulltext("https://x/best.pdf") == "PEŁNY TEKST"
+    assert fetch_oa_fulltext("https://x/best.pdf") == "FULL TEXT"
 
 
 @respx.mock

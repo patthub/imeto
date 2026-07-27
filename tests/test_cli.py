@@ -23,9 +23,9 @@ class FakeLLMClient:
         return Extraction(
             facts=[
                 ExtractedFact(
-                    statement="Rada przyjęła.",
+                    statement="The council adopted.",
                     kind="direct",
-                    quotes=["przyjęła uchwałę nr 12"],
+                    quotes=["adopted resolution no. 12"],
                 )
             ]
         )
@@ -33,40 +33,42 @@ class FakeLLMClient:
 
 def _make_docx(path: Path) -> Path:
     doc = Document()
-    doc.add_paragraph("Rada gminy przyjęła uchwałę nr 12.")
+    doc.add_paragraph("The council adopted resolution no. 12.")
     doc.save(str(path))
     return path
 
 
 def test_run_extracts_and_prints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     doc = _make_docx(tmp_path / "s.docx")
-    monkeypatch.setattr(settings, "db_url", "sqlite://")  # in-memory, bez pliku
+    monkeypatch.setattr(settings, "db_url", "sqlite://")  # in-memory, no file
     monkeypatch.setattr("imeto.cli.LLMClient", FakeLLMClient)
 
     result = runner.invoke(app, ["run", str(doc), "--type", "report"])
 
     assert result.exit_code == 0
-    assert "1 faktów zapisanych" in result.stdout
+    assert "1 facts saved" in result.stdout
     assert "(direct)" in result.stdout
-    assert "uchwałę nr 12" in result.stdout
+    assert "resolution no. 12" in result.stdout
 
 
 def test_run_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     doc = _make_docx(tmp_path / "s.docx")
-    monkeypatch.setattr(settings, "db_url", f"sqlite:///{tmp_path}/t.db")  # trwała baza
+    monkeypatch.setattr(
+        settings, "db_url", f"sqlite:///{tmp_path}/t.db"
+    )  # persistent db
     monkeypatch.setattr("imeto.cli.LLMClient", FakeLLMClient)
 
     r1 = runner.invoke(app, ["run", str(doc), "--type", "report"])
     r2 = runner.invoke(app, ["run", str(doc), "--type", "report"])
 
     assert r1.exit_code == 0 and r2.exit_code == 0
-    assert "1 faktów zapisanych" in r1.stdout
-    assert "już zaimportowane" in r2.stdout  # brak crasha, brak duplikatu
+    assert "1 facts saved" in r1.stdout
+    assert "already imported" in r2.stdout  # no crash, no duplicate
 
 
 def test_run_missing_file_errors():
     result = runner.invoke(app, ["run", "/nie/ma/takiego.docx"])
-    assert result.exit_code != 0  # walidacja ścieżki przez Typer, bez dotykania modelu
+    assert result.exit_code != 0  # path validation by Typer, without touching the model
 
 
 @respx.mock
@@ -75,11 +77,15 @@ def test_ingest_doi_fetches_and_extracts(monkeypatch: pytest.MonkeyPatch):
         return_value=httpx.Response(
             200,
             json={
-                "title": "Praca",
+                "title": "Work",
                 "type": "article",
                 "abstract_inverted_index": {
-                    "Rada": [0], "gminy": [1], "przyjęła": [2],
-                    "uchwałę": [3], "nr": [4], "12": [5],
+                    "The": [0],
+                    "council": [1],
+                    "adopted": [2],
+                    "resolution": [3],
+                    "no.": [4],
+                    "12": [5],
                 },
             },
         )
@@ -90,8 +96,8 @@ def test_ingest_doi_fetches_and_extracts(monkeypatch: pytest.MonkeyPatch):
     result = runner.invoke(app, ["ingest", "--doi", "10.1/x", "--type", "article"])
 
     assert result.exit_code == 0
-    assert "1 faktów zapisanych" in result.stdout
-    assert "uchwałę nr 12" in result.stdout
+    assert "1 facts saved" in result.stdout
+    assert "resolution no. 12" in result.stdout
 
 
 @respx.mock

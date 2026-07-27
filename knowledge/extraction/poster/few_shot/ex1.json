@@ -1,10 +1,10 @@
 {
-  "fragment": "Wyniki: skuteczność interwencji 78% (n=240). Wniosek: metoda gotowa do wdrożenia.",
+  "fragment": "Results: intervention efficacy 78% (n=240). Conclusion: method ready for deployment.",
   "facts": [
     {
-      "statement": "Skuteczność interwencji wyniosła 78% (n=240).",
+      "statement": "The intervention efficacy was 78% (n=240).",
       "kind": "direct",
-      "quotes": ["skuteczność interwencji 78% (n=240)"]
+      "quotes": ["intervention efficacy 78% (n=240)"]
     }
   ]
 }

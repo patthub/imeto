@@ -1,11 +1,11 @@
 {
   "name": "proposal_budget",
   "work_type": "proposal",
-  "text": "Projekt obejmuje trzy etapy. Wnioskowany budżet całkowity wynosi 750 000 złotych. Planowane jest zatrudnienie 4 badaczy na okres 36 miesięcy. Celem jest opracowanie prototypu urządzenia diagnostycznego.",
+  "text": "The project comprises three stages. The requested total budget is PLN 750,000. It is planned to employ 4 researchers for a period of 36 months. The goal is to develop a prototype of a diagnostic device.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["trzy etapy"]},
-    {"kind": "direct", "quote_substrings": ["750 000"]},
-    {"kind": "direct", "quote_substrings": ["zatrudnienie 4 badaczy", "36 miesięcy"]},
-    {"kind": "direct", "quote_substrings": ["prototypu urządzenia diagnostycznego"]}
+    {"kind": "direct", "quote_substrings": ["three stages"]},
+    {"kind": "direct", "quote_substrings": ["750,000"]},
+    {"kind": "direct", "quote_substrings": ["employ 4 researchers", "36 months"]},
+    {"kind": "direct", "quote_substrings": ["prototype of a diagnostic device"]}
   ]
 }

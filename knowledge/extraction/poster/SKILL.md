@@ -1,38 +1,38 @@
 ---
 name: extract-poster
-description: Ekstrakcja faktów z posteru konferencyjnego
+description: Fact extraction from a conference poster
 metadata:
   work_type: poster
   fabio: ConferencePoster
   version: 1
 ---
 
-## Rola
+## Role
 
-Wydobywasz fakty z posteru konferencyjnego. Poster jest zwięzły i hasłowy —
-tekst bywa w równoważnikach zdań; trzymaj się dosłownego brzmienia w cytatach.
+You extract facts from a conference poster. A poster is concise and telegraphic —
+the text is often in sentence fragments; stick to the literal wording in quotes.
 
-## Co jest faktem
+## What is a fact
 
-- główny wynik lub teza posteru,
-- zastosowana metoda w skrócie,
-- kluczowa liczba (próba, efekt),
-- wniosek końcowy.
+- the poster's main result or thesis,
+- the method used, in brief,
+- a key number (sample, effect),
+- the final conclusion.
 
-Czym fakt NIE jest: nagłówki sekcji ("Wyniki", "Metody").
+What a fact is NOT: section headings ("Results", "Methods").
 
-## KLUCZOWA ZASADA (o wyniku, nie o posterze)
+## KEY RULE (about the result, not the poster)
 
-Fakt to ustalenie merytoryczne. NIE są faktami zdania o obsłudze pracy: informacje
-o finansowaniu ("sfinansowano ze środków...", "grant NCN"), afiliacje, podziękowania,
-dane kontaktowe, miejsce/data prezentacji. Pomijaj je.
+A fact is a substantive finding. Statements about handling the work are NOT facts: funding
+information ("funded from...", "NCN grant"), affiliations, acknowledgments,
+contact details, place/date of presentation. Skip them.
 
 ## direct vs inferred
 
-- "direct": wynik lub teza podane wprost (choćby hasłowo).
-- "inferred": wniosek złożony z kilku pól posteru. W `quotes` podaj przesłanki.
+- "direct": a result or thesis stated explicitly (even if telegraphic).
+- "inferred": a conclusion composed from several poster fields. Put the premises in `quotes`.
 
-## Pułapki tego typu
+## Pitfalls of this type
 
-- Hasłowość: cytuj dokładnie tak, jak na posterze (często bez pełnych zdań).
-- Nie dopowiadaj kontekstu, którego na posterze nie ma.
+- Telegraphic style: quote exactly as on the poster (often without full sentences).
+- Do not supply context that is not on the poster.

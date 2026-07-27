@@ -1,10 +1,10 @@
 {
-  "fragment": "Autor dowodzi, że migracje zarobkowe trwale zmieniły strukturę wsi. Zagadnienie omówiono szerzej w rozdziale piątym. Książka zawiera obszerny indeks nazwisk.",
+  "fragment": "The author argues that labor migration permanently changed the structure of the countryside. The issue is discussed more fully in chapter five. The book contains an extensive index of names.",
   "facts": [
     {
-      "statement": "Autor twierdzi, że migracje zarobkowe zmieniły strukturę wsi.",
+      "statement": "The author claims that labor migration changed the structure of the countryside.",
       "kind": "direct",
-      "quotes": ["migracje zarobkowe trwale zmieniły strukturę wsi"]
+      "quotes": ["labor migration permanently changed the structure of the countryside"]
     }
   ]
 }

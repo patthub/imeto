@@ -1,10 +1,10 @@
 {
-  "fragment": "Autor dowodzi, że reforma z 1999 roku pogłębiła nierówności edukacyjne na wsi.",
+  "fragment": "The author argues that the 1999 reform deepened educational inequalities in rural areas.",
   "facts": [
     {
-      "statement": "Autor twierdzi, że reforma z 1999 r. pogłębiła nierówności edukacyjne na wsi.",
+      "statement": "The author claims that the 1999 reform deepened educational inequalities in rural areas.",
       "kind": "direct",
-      "quotes": ["reforma z 1999 roku pogłębiła nierówności edukacyjne na wsi"]
+      "quotes": ["the 1999 reform deepened educational inequalities in rural areas"]
     }
   ]
 }

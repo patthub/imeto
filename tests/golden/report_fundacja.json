@@ -1,11 +1,11 @@
 {
   "name": "report_fundacja",
   "work_type": "report",
-  "text": "W ramach projektu przeszkolono 128 nauczycieli z 24 szkół w województwie mazowieckim. Łączny budżet zrealizowanych projektów wyniósł 1 340 000 złotych. Fundacja podpisała porozumienie o współpracy z Uniwersytetem Warszawskim w dniu 12 czerwca 2025 roku.",
+  "text": "As part of the project, 128 teachers from 24 schools in the Masovian Voivodeship were trained. The total budget of the completed projects amounted to PLN 1,340,000. The foundation signed a cooperation agreement with the University of Warsaw on 12 June 2025.",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["przeszkolono 128 nauczycieli"]},
-    {"kind": "direct", "quote_substrings": ["1 340 000"]},
-    {"kind": "direct", "quote_substrings": ["porozumienie o współpracy z Uniwersytetem Warszawskim"]},
-    {"kind": "direct", "quote_substrings": ["12 czerwca 2025"]}
+    {"kind": "direct", "quote_substrings": ["128 teachers"]},
+    {"kind": "direct", "quote_substrings": ["1,340,000"]},
+    {"kind": "direct", "quote_substrings": ["cooperation agreement with the University of Warsaw"]},
+    {"kind": "direct", "quote_substrings": ["12 June 2025"]}
   ]
 }

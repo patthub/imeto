@@ -1,10 +1,10 @@
 {
   "name": "poster_filtration",
   "work_type": "poster",
-  "text": "Wyniki: redukcja zanieczyszczeń o 62% wobec metody standardowej. Zastosowano próbę 200 pomiarów. Wniosek: metoda nadaje się do zastosowań przemysłowych. Kontakt: jan.kowalski@example.pl",
+  "text": "Results: reduction of pollutants by 62% compared to the standard method. A sample of 200 measurements was used. Conclusion: the method is suitable for industrial applications. Contact: jan.kowalski@example.pl",
   "expected": [
-    {"kind": "direct", "quote_substrings": ["redukcja zanieczyszczeń o 62%"]},
-    {"kind": "direct", "quote_substrings": ["200 pomiarów"]},
-    {"kind": "direct", "quote_substrings": ["nadaje się do zastosowań przemysłowych"]}
+    {"kind": "direct", "quote_substrings": ["reduction of pollutants by 62%"]},
+    {"kind": "direct", "quote_substrings": ["200 measurements"]},
+    {"kind": "direct", "quote_substrings": ["suitable for industrial applications"]}
   ]
 }

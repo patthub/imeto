@@ -20,8 +20,48 @@ from imeto.ui.app import (
     extract_candidates,
     extract_candidates_from_doi,
     extract_candidates_from_url,
+    facts_csv,
+    facts_rows,
+    load_source,
 )
 from imeto.worktypes import WorkType
+
+
+def test_facts_rows_shows_provenance_and_external_mark():
+    # table: provenance + context; internal fact without a lead → "—" (marked)
+    store = ProvenanceStore()
+    sid = store.add_source(
+        Source(
+            local_identifier="doc",
+            full_text="Intro. System X was deployed in the municipality. End.",
+        )
+    )
+    e = store.add_evidence(sid, "System X was deployed")
+    c = store.add_claim(sid, "System X was deployed.", "direct", [e])
+    ext = store.add_source(
+        Source(
+            local_identifier="https://gov.pl/p", full_text="X has worked since 2025."
+        )
+    )
+    ee = store.add_evidence(ext, "X has worked since 2025")
+    c2 = store.add_claim(
+        sid, "Internal fact.", "direct", [store.add_evidence(sid, "Intro")]
+    )
+
+    rows = facts_rows(store, [c, c2])
+
+    assert rows[0][1] == "direct" and "System X was deployed" in rows[0][2]
+    assert "System X was deployed" in rows[0][3]  # quote in source
+    assert "–" in rows[0][4]  # start–end position
+    assert "municipality" in rows[0][5]  # context around the quote
+    assert rows[0][6] == "—"  # trail: suggester didn't run → no lead
+    assert rows[1][7] == "—"  # impact: no external corroboration (marked)
+    store.link_evidence(c, ee)
+    assert "gov.pl" in facts_rows(store, [c])[0][7]  # after linking — impact visible
+
+    # CSV: headers + fact row, readable in Excel (BOM)
+    text = Path(facts_csv(store, [c])).read_text(encoding="utf-8-sig")
+    assert "Fact" in text and "System X was deployed" in text
 
 
 class FakeLLM:
@@ -36,7 +76,7 @@ class FakeLLM:
 
 def _make_docx(path: Path) -> Path:
     doc = Document()
-    doc.add_paragraph("Rada gminy przyjęła uchwałę nr 12 w sprawie budżetu.")
+    doc.add_paragraph("The council adopted resolution no. 12 regarding the budget.")
     doc.save(str(path))
     return path
 
@@ -46,11 +86,21 @@ def _skills(tmp_path: Path) -> SkillRegistry:
     for sub, name in [("extraction", "report"), ("extraction", "article")]:
         d = base / sub / name
         d.mkdir(parents=True)
-        (d / "SKILL.md").write_text("## Rola\ntest", encoding="utf-8")
+        (d / "SKILL.md").write_text("## Role\ntest", encoding="utf-8")
     crit = base / "criteria" / "kryterium_iii"
     crit.mkdir(parents=True)
-    (crit / "SKILL.md").write_text("## Rubryka\ntest", encoding="utf-8")
+    (crit / "SKILL.md").write_text("## Rubric\ntest", encoding="utf-8")
     return SkillRegistry(base)
+
+
+def test_load_source_creates_source_without_extracting(tmp_path: Path):
+    # load = fetch/create source + preview, NO extraction (no claims yet)
+    doc = _make_docx(tmp_path / "s.docx")
+    store = ProvenanceStore()
+    sid, preview = load_source(store, "File", str(doc), "", "", WorkType.report)
+    assert isinstance(sid, int)
+    assert "Loaded source" in preview and "chars" in preview
+    assert store.claims_for_source(sid) == []  # nothing extracted on load
 
 
 def test_extract_candidates_returns_source_and_labels(tmp_path: Path):
@@ -59,16 +109,22 @@ def test_extract_candidates_returns_source_and_labels(tmp_path: Path):
     ex = Extraction(
         facts=[
             ExtractedFact(
-                statement="Rada przyjęła.", kind="direct", quotes=["uchwałę nr 12"]
+                statement="The council adopted.",
+                kind="direct",
+                quotes=["resolution no. 12"],
             )
         ]
     )
     sid, cands = extract_candidates(
-        store, _skills(tmp_path), str(doc), WorkType.report, FakeLLM(ex)  # type: ignore[arg-type]
+        store,
+        _skills(tmp_path),
+        str(doc),
+        WorkType.report,
+        FakeLLM(ex),  # type: ignore[arg-type]
     )
     assert isinstance(sid, int)
     assert len(cands) == 1
-    assert "uchwałę nr 12" in cands[0][1]
+    assert "resolution no. 12" in cands[0][1]
 
 
 @respx.mock
@@ -77,20 +133,24 @@ def test_extract_candidates_from_doi(tmp_path: Path):
         return_value=httpx.Response(
             200,
             json={
-                "title": "Praca",
+                "title": "Work",
                 "type": "article",
-                "abstract_inverted_index": {"dokładność": [0], "92%": [1]},
+                "abstract_inverted_index": {"accuracy": [0], "92%": [1]},
             },
         )
     )
     store = ProvenanceStore()
     ex = Extraction(
         facts=[
-            ExtractedFact(statement="wynik", kind="direct", quotes=["dokładność 92%"])
+            ExtractedFact(statement="result", kind="direct", quotes=["accuracy 92%"])
         ]
     )
     sid, cands = extract_candidates_from_doi(
-        store, _skills(tmp_path), "10.1/x", WorkType.article, FakeLLM(ex)  # type: ignore[arg-type]
+        store,
+        _skills(tmp_path),
+        "10.1/x",
+        WorkType.article,
+        FakeLLM(ex),  # type: ignore[arg-type]
     )
     assert isinstance(sid, int) and len(cands) == 1
 
@@ -98,35 +158,43 @@ def test_extract_candidates_from_doi(tmp_path: Path):
 def test_extract_candidates_from_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "imeto.ingest.sources.fetch_url_text",
-        lambda url: "Wyniki wpłynęły na politykę edukacyjną.",
+        lambda url: "The results influenced education policy.",
     )
     store = ProvenanceStore()
     ex = Extraction(
         facts=[
             ExtractedFact(
-                statement="wpływ", kind="direct", quotes=["wpłynęły na politykę"]
+                statement="impact",
+                kind="direct",
+                quotes=["influenced education policy"],
             )
         ]
     )
     sid, cands = extract_candidates_from_url(
-        store, _skills(tmp_path), "https://gov.pl/r", WorkType.report, FakeLLM(ex)  # type: ignore[arg-type]
+        store,
+        _skills(tmp_path),
+        "https://gov.pl/r",
+        WorkType.report,
+        FakeLLM(ex),  # type: ignore[arg-type]
     )
     assert isinstance(sid, int) and len(cands) == 1
 
 
 def test_argue_over_accepted_facts(tmp_path: Path):
     store = ProvenanceStore()
-    sid = store.add_source(Source(local_identifier="d", full_text="Wdrożono system X."))
-    e = store.add_evidence(sid, "Wdrożono system X")
-    c = store.add_claim(sid, "Wdrożono system X.", "direct", [e])
+    sid = store.add_source(
+        Source(local_identifier="d", full_text="System X was deployed.")
+    )
+    e = store.add_evidence(sid, "System X was deployed")
+    c = store.add_claim(sid, "System X was deployed.", "direct", [e])
     store.accept_claim(c)
 
     arg = Argumentation(
-        arguments=[ProposedArgument(side="za", statement="wpływ", based_on=[1])]
+        arguments=[ProposedArgument(side="for", statement="impact", based_on=[1])]
     )
     out = argue_candidates(store, _skills(tmp_path), sid, FakeLLM(arg))  # type: ignore[arg-type]
     assert len(out) == 1
-    assert "[ZA]" in out[0][1]
+    assert "[FOR]" in out[0][1]
 
     acc, rej = apply_argument_decisions(store, [out[0][0]], [out[0][0]])
     assert (acc, rej) == (1, 0)
@@ -135,10 +203,10 @@ def test_argue_over_accepted_facts(tmp_path: Path):
 
 def test_apply_decisions_accepts_selected_rejects_rest():
     store = ProvenanceStore()
-    src = Source(local_identifier="d", full_text="uchwałę nr 12 i tekst")
+    src = Source(local_identifier="d", full_text="resolution no. 12 and text")
     sid = store.add_source(src)
-    e1 = store.add_evidence(sid, "uchwałę nr 12")
-    e2 = store.add_evidence(sid, "tekst")
+    e1 = store.add_evidence(sid, "resolution no. 12")
+    e2 = store.add_evidence(sid, "text")
     c1 = store.add_claim(sid, "a", "direct", [e1])
     c2 = store.add_claim(sid, "b", "direct", [e2])
 

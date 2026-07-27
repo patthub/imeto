@@ -1,10 +1,10 @@
 {
-  "fragment": "Wynik: czułość testu wyniosła 95%. Badania sfinansowano z grantu NCN. Kontakt: lab@example.pl",
+  "fragment": "Result: test sensitivity was 95%. The research was funded by an NCN grant. Contact: lab@example.pl",
   "facts": [
     {
-      "statement": "Czułość testu wyniosła 95%.",
+      "statement": "Test sensitivity was 95%.",
       "kind": "direct",
-      "quotes": ["czułość testu wyniosła 95%"]
+      "quotes": ["test sensitivity was 95%"]
     }
   ]
 }

@@ -1,13 +1,14 @@
-"""Faza korroboracji: dla każdego faktu z dokumentu szukaj w internecie POTWIERDZENIA
-jego społecznego wpływu i zakotwicz je dosłownie.
+"""Corroboration phase: for each fact in the document, search the web for
+CONFIRMATION of its social impact and anchor it verbatim.
 
-Napędzane faktami i automatyczne: fakt → zapytanie → wyszukiwanie → pobranie kandydatów
-→ LLM ocenia, czy strona potwierdza wpływ i podaje DOSŁOWNY cytat → cytat weryfikowany
-znak w znak na tej stronie (add_evidence) → dowód zewnętrzny wpięty do faktu.
+Fact-driven and automatic: fact → query → search → fetch candidates → LLM judges
+whether the page confirms impact and supplies a VERBATIM quote → the quote is verified
+character-for-character against that page (add_evidence) → external evidence linked to
+the fact.
 
-Dyscyplina anty-halucynacyjna: potwierdzenie MUSI być dosłownym fragmentem realnie
-pobranej strony — LLM nie może go zmyślić. Wyszukiwarka i strony zwracają KANDYDATÓW;
-człowiek ocenia, które potwierdzenia liczą (Z1)."""
+Anti-hallucination discipline: the confirmation MUST be a verbatim fragment of an
+actually fetched page — the LLM cannot invent it. The search engine and pages return
+CANDIDATES; the human judges which confirmations count (Z1)."""
 
 from dataclasses import dataclass, field
 
@@ -17,17 +18,22 @@ from imeto.core.schemas import Corroboration
 from imeto.ingest.sources import source_from_text
 from imeto.ingest.web import fetch_url_text
 from imeto.phases.base import PhaseContext, PhaseResult
+from imeto.phases.suggest import study_context
 from imeto.tools.web_search import web_search
 
 CORROBORATE_SYSTEM = (
-    "Sprawdzasz, czy STRONA potwierdza SPOŁECZNY WPŁYW opisanego FAKTU — realny skutek "
-    "poza nauką: wdrożenie, przyjęcie przez instytucję, cytowanie w polityce, "
-    "zmiana praktyki. Zwróć tylko JSON:\n"
+    "You check whether a PAGE confirms the SOCIAL IMPACT of the described FACT — a "
+    "real effect outside science: deployment, adoption by an institution, citation in "
+    "policy, change of practice. You are also given the STUDY CONTEXT "
+    "(title/authors/topic). Return only JSON:\n"
     '{"confirms": true/false, "quote": "..."}\n'
-    "- confirms: true TYLKO gdy strona faktycznie potwierdza wpływ TEGO faktu.\n"
-    "- quote: DOSŁOWNY fragment STRONY potwierdzający wpływ (skopiowany znak w znak); "
-    "pusty, gdy confirms=false.\n"
-    "- Nie zmyślaj cytatu. Sama wzmianka o temacie bez potwierdzenia wpływu to false."
+    "- confirms: true ONLY when the page concerns THIS SPECIFIC study or its "
+    "intervention (the same subject, authors, institution, method) AND confirms its "
+    "impact. A page on a similar TOPIC but unrelated to this study = false.\n"
+    "- quote: a VERBATIM fragment of the PAGE confirming the impact (copied character "
+    "for character); empty when confirms=false.\n"
+    "- Do not invent the quote. A shared keyword or the same general topic is NOT "
+    "confirmation — a real connection to this study and its impact is required."
 )
 
 
@@ -36,21 +42,27 @@ def corroborate_one(
     llm: LLMClient,
     claim: Claim,
     *,
+    query: str | None = None,
+    context: str = "",
     max_candidates: int = 3,
     page_chars: int = 6000,
     activity: str | None = None,
     agent: str | None = None,
 ) -> int | None:
-    """Szuka i kotwiczy potwierdzenie wpływu JEDNEGO faktu. Zwraca id dowodu-
-    potwierdzenia (zewnętrznego) albo None. Cytat musi być dosłowny na stronie."""
+    """Search for and anchor an impact confirmation for ONE fact. Returns the id of the
+    (external) confirming evidence, or None. The quote must be verbatim on the page.
+
+    `query` (from the suggester) targets the IMPACT lead; absent → search by fact text.
+    `context` = the study's identity — the verdict rejects pages merely on a similar
+    topic."""
     assert claim.id is not None
-    for cand in web_search(claim.statement, max_results=max_candidates):
+    ctx = f"STUDY CONTEXT:\n{context}\n\n" if context else ""
+    for cand in web_search(query or claim.statement, max_results=max_candidates):
         text = fetch_url_text(cand.url)
         if not text:
             continue
-        user = (
-            f"FAKT: {claim.statement}\n\nSTRONA ({cand.url}):\n{text[:page_chars]}"
-        )
+        page = text[:page_chars]
+        user = f"{ctx}FACT: {claim.statement}\n\nPAGE ({cand.url}):\n{page}"
         verdict = llm.structured(CORROBORATE_SYSTEM, user, Corroboration)
         if not verdict.confirms or not verdict.quote.strip():
             continue
@@ -60,7 +72,7 @@ def corroborate_one(
                 ext_sid, verdict.quote, activity=activity, agent=agent
             )
         except SpanNotVerified:
-            continue  # LLM zmyślił cytat — odrzuć, próbuj kolejnego kandydata
+            continue  # LLM invented the quote — reject, try the next candidate
         store.link_evidence(claim.id, ev)
         return ev
     return None
@@ -79,23 +91,35 @@ class CorroboratePhase:
         if not claims:
             return PhaseResult(
                 ok=False,
-                summary=f"źródło {self.source_id}: brak faktów "
+                summary=f"source {self.source_id}: no facts "
                 f"(status={self.claim_status})",
             )
+        # the study's identity — keeps search and verdict tied to THIS study
+        context = study_context(ctx.store.get_source(self.source_id))
         activity = f"corroborate:{self.source_id}"
         agent = ctx.llm.model
-        produced: list[int] = []  # id dowodów-potwierdzeń
+        produced: list[int] = []  # ids of confirming evidence
         for claim in claims:
+            # Search EVERY fact. The lead from the store (suggester + optional human
+            # edit) drives the query when present; no lead → search by fact text. The
+            # 'internal' trail is only a hint, not a filter (we cast a wider net).
+            lead = ctx.store.get_lead(claim.id) if claim.id is not None else None
             eid = corroborate_one(
-                ctx.store, ctx.llm, claim,
-                max_candidates=self.max_candidates, page_chars=self.page_chars,
-                activity=activity, agent=agent,
+                ctx.store,
+                ctx.llm,
+                claim,
+                query=lead.query if lead is not None else None,
+                context=context,
+                max_candidates=self.max_candidates,
+                page_chars=self.page_chars,
+                activity=activity,
+                agent=agent,
             )
             if eid is not None:
                 produced.append(eid)
         summary = (
-            f"źródło {self.source_id}: potwierdzono {len(produced)}/{len(claims)} "
-            "faktów w sieci"
+            f"source {self.source_id}: corroborated {len(produced)}/{len(claims)} "
+            f"facts on the web"
         )
         return PhaseResult(
             ok=True, summary=summary, produced=produced, needs_human=True

@@ -8,34 +8,34 @@ from imeto.obs.eval import (
 
 
 def test_perfect_match():
-    pred = [PredictedFact("direct", ["przeszkolono 128 osób"])]
-    exp = [ExpectedFact("direct", ["128 osób"])]
+    pred = [PredictedFact("direct", ["trained 128 people"])]
+    exp = [ExpectedFact("direct", ["128 people"])]
     m = score(pred, exp)
     assert (m.recall, m.precision, m.kind_accuracy) == (1.0, 1.0, 1.0)
 
 
 def test_missed_fact_lowers_recall():
-    exp = [ExpectedFact("direct", ["czegoś nie ma"])]
+    exp = [ExpectedFact("direct", ["something missing"])]
     m = score([], exp)
     assert m.recall == 0.0 and m.matched == 0
 
 
 def test_false_positive_lowers_precision():
-    pred = [PredictedFact("direct", ["zmyślone"])]
+    pred = [PredictedFact("direct", ["fabricated"])]
     m = score(pred, [])
     assert m.precision == 0.0
 
 
 def test_kind_mismatch():
-    pred = [PredictedFact("direct", ["ala ma kota"])]
-    exp = [ExpectedFact("inferred", ["ma kota"])]
+    pred = [PredictedFact("direct", ["the cat sat on the mat"])]
+    exp = [ExpectedFact("inferred", ["cat sat on the mat"])]
     m = score(pred, exp)
     assert m.matched == 1 and m.kind_accuracy == 0.0
 
 
 def test_matching_folds_typography():
-    pred = [PredictedFact("direct", ['projekt „Szkoła”'])]
-    exp = [ExpectedFact("direct", ['projekt "Szkoła"'])]
+    pred = [PredictedFact("direct", ["the „School” project"])]
+    exp = [ExpectedFact("direct", ['the "School" project'])]
     assert score(pred, exp).matched == 1
 
 
@@ -56,7 +56,7 @@ def test_golden_files_present_and_valid():
         assert c["work_type"] and c["text"] and c["expected"]
         hay = _fold(c["text"]).lower()
         for e in c["expected"]:
-            # każdy oczekiwany fakt musi mieć co najmniej jeden substring w tekście
+            # every expected fact must have at least one substring present in the text
             assert any(_fold(s).lower() in hay for s in e["quote_substrings"]), (
-                f"{c['name']}: brak w tekście {e['quote_substrings']}"
+                f"{c['name']}: not in text {e['quote_substrings']}"
             )
