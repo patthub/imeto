@@ -64,23 +64,69 @@ def test_suggest_maps_leads_to_claims(tmp_path: Path):
     assert got[0].query == "method X municipality"
 
 
+def test_suggest_appends_study_handle_to_queries(tmp_path: Path):
+    # a topic-only query finds any study on the subject — the handle pins it to this one
+    store = ProvenanceStore()
+    claims = _two_claims(store)
+    leads = LeadSet(
+        study_handle="Krakowski Manista museums",
+        leads=[
+            ImpactLead(based_on=1, lead="deployment", query="municipality deployed"),
+            # already names the study -> handle not appended (no scrambled tail)
+            ImpactLead(based_on=2, lead="citation", query="Krakowski Manista cited"),
+        ],
+    )
+    got = suggest_leads(FakeLeadLLM(leads), _skills(tmp_path), claims)  # type: ignore[arg-type]
+
+    assert got[0].query == "municipality deployed Krakowski Manista museums"
+    assert got[1].query == "Krakowski Manista cited"
+
+
+def test_run_suggester_treats_na_query_as_no_lead(tmp_path: Path):
+    # the model writes "N/A" instead of leaving it empty — never search for that
+    store = ProvenanceStore()
+    claims = _two_claims(store)
+    sid, c1 = claims[0].source_id, claims[0].id
+    leads = LeadSet(leads=[ImpactLead(based_on=1, lead="none", query="N/A")])
+    run_suggester(store, FakeLeadLLM(leads), _skills(tmp_path), sid, claim_status=None)  # type: ignore[arg-type]
+
+    assert store.get_lead(c1) is None
+    assert store.get_claim(c1).external_trail == "internal"
+
+
 def test_suggest_empty_claims_no_call(tmp_path: Path):
     # no facts -> no model call (returns [] without touching llm)
     assert suggest_leads(None, _skills(tmp_path), [], "kryterium_iii") == []  # type: ignore[arg-type]
 
 
+class SequenceLeadLLM:
+    """One response per fact — the suggester calls the model once per fact."""
+
+    model = "fake"
+
+    def __init__(self, responses: list) -> None:
+        self._r = list(responses)
+
+    def structured(self, system: str, user: str, schema: type[LeadSet]) -> LeadSet:
+        r = self._r.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
 def test_run_suggester_persists_trail_and_lead(tmp_path: Path):
-    # lead only for c1; c1→candidate+lead, c2→internal+no lead
+    # c1 gets a lead; the call for c2 dies -> c2 internal+no lead, c1 survives
     store = ProvenanceStore()
     claims = _two_claims(store)
     for c in claims:
         store.accept_claim(c.id)
     sid = claims[0].source_id
     c1, c2 = claims[0].id, claims[1].id
-    leads = LeadSet(
+    ok = LeadSet(
         leads=[ImpactLead(based_on=1, lead="deployment", query="method X municipality")]
     )
-    got = run_suggester(store, FakeLeadLLM(leads), _skills(tmp_path), sid)  # type: ignore[arg-type]
+    llm = SequenceLeadLLM([ok, TimeoutError("model timed out")])
+    got = run_suggester(store, llm, _skills(tmp_path), sid)  # type: ignore[arg-type]
 
     assert len(got) == 1
     assert store.get_claim(c1).external_trail == "candidate"

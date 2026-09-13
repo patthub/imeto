@@ -94,6 +94,14 @@ class ExtractPhase:
 
         activity = f"extract:{self.source_id}"
         agent = ctx.llm.model
+        # a re-run REPLACES the source's fact set: earlier claims are marked rejected
+        # (kept as history, with their provenance) so that suggest/corroborate/argue —
+        # which query the store for 'accepted' claims — never mix two extraction runs.
+        superseded = 0
+        for old in ctx.store.claims_for_source(self.source_id):
+            if old.id is not None and old.status != "rejected":
+                ctx.store.reject_claim(old.id, by=activity)
+                superseded += 1
         produced: list[int] = []
         ungrounded = 0  # facts with no verified ground at all (rejected)
         partial = 0  # facts with some grounds unverified
@@ -127,6 +135,7 @@ class ExtractPhase:
 
         frag = f", {len(chunks)} chunks" if len(chunks) > 1 else ""
         frag += f" ({failed_chunks} failed)" if failed_chunks else ""
+        frag += f", {superseded} from an earlier run superseded" if superseded else ""
         stop = " [STOPPED by user]" if stopped else ""
         summary = (
             f"source {self.source_id}: {len(produced)} facts saved "

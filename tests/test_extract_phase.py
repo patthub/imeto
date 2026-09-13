@@ -107,6 +107,26 @@ def test_extract_typed_facts_with_grounds(tmp_path: Path):
     assert all("dissolved" not in c.statement for c in claims)
 
 
+def test_rerun_supersedes_the_previous_run(tmp_path: Path):
+    # re-extracting the same source must not stack two fact sets: the older claims
+    # go to 'rejected', so accepted-only queries see the newest run alone
+    store = ProvenanceStore()
+    sid = store.add_source(Source(local_identifier="d", full_text=TEXT))
+    ctx = _ctx(store, _extraction(), tmp_path)  # same skills dir for both runs
+    first = ExtractPhase(sid, WorkType.report).run(ctx)
+    for cid in first.produced:
+        store.accept_claim(cid)
+
+    second = ExtractPhase(sid, WorkType.report).run(ctx)
+
+    assert "3 from an earlier run superseded" in second.summary
+    assert len(store.claims_for_source(sid)) == 6  # history kept
+    live = store.claims_for_source(sid, status="accepted")
+    assert live == []  # the new run's claims still await the human gate
+    old = [store.get_claim(cid) for cid in first.produced]
+    assert all(c.status == "rejected" for c in old)
+
+
 def test_empty_facts_produces_nothing(tmp_path: Path):
     store = ProvenanceStore()
     sid = store.add_source(Source(local_identifier="d", full_text=TEXT))

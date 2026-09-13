@@ -51,6 +51,38 @@ def test_corroborate_anchors_external_confirmation(monkeypatch: pytest.MonkeyPat
     assert any(x.source_id != sid for x in linked)  # external confirmation linked
 
 
+def test_citing_works_are_tried_before_the_search_engine(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # a citing work demonstrably USED this study; a search hit only shares its topic
+    store = ProvenanceStore()
+    src = Source(
+        local_identifier="https://doi.org/10.1/x",
+        full_text="The pilot program was published.",
+    )
+    sid = store.add_source(src)
+    e = store.add_evidence(sid, "The pilot program was published")
+    c = store.add_claim(sid, "The pilot program was published.", "direct", [e])
+    store.accept_claim(c)
+    monkeypatch.setattr(
+        C, "citing_works", lambda doi, **kw: [SearchResult("c", "https://gov.pl/c", "")]
+    )
+    searched: list[str] = []
+    monkeypatch.setattr(
+        C, "web_search", lambda q, max_results=3: searched.append(q) or []
+    )
+    monkeypatch.setattr(C, "fetch_url_text", lambda url: "The pilot was deployed.")
+    verdict = Corroboration(confirms=True, quote="The pilot was deployed")
+    ctx = PhaseContext(store=store, llm=FakeLLM(verdict), skills=SkillRegistry("."))  # type: ignore[arg-type]
+
+    result = CorroboratePhase(sid).run(ctx)
+
+    assert len(result.produced) == 1
+    ev = store.get_evidence(result.produced[0])
+    assert store.get_source(ev.source_id).local_identifier == "https://gov.pl/c"
+    assert searched == []  # confirmed from a citation; the engine was never needed
+
+
 def test_corroborate_rejects_non_verbatim_quote(monkeypatch: pytest.MonkeyPatch):
     store = ProvenanceStore()
     sid, c = _one_accepted_fact(store)

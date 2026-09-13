@@ -10,16 +10,19 @@ Anti-hallucination discipline: the confirmation MUST be a verbatim fragment of a
 actually fetched page — the LLM cannot invent it. The search engine and pages return
 CANDIDATES; the human judges which confirmations count (Z1)."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from imeto.config import settings
 from imeto.core.llm import LLMClient
-from imeto.core.provenance import Claim, ProvenanceStore, SpanNotVerified
+from imeto.core.provenance import Claim, ProvenanceStore, Source, SpanNotVerified
 from imeto.core.schemas import Corroboration
 from imeto.ingest.sources import source_from_text
 from imeto.ingest.web import fetch_url_text
 from imeto.phases.base import PhaseContext, PhaseResult
 from imeto.phases.suggest import study_context
-from imeto.tools.web_search import web_search
+from imeto.tools.citations import citing_works, doi_of
+from imeto.tools.web_search import SearchResult, web_search
 
 CORROBORATE_SYSTEM = (
     "You check whether a PAGE confirms the SOCIAL IMPACT of the described FACT — a "
@@ -44,6 +47,7 @@ def corroborate_one(
     *,
     query: str | None = None,
     context: str = "",
+    citing: Sequence[SearchResult] = (),
     max_candidates: int = 3,
     page_chars: int = 6000,
     activity: str | None = None,
@@ -54,28 +58,56 @@ def corroborate_one(
 
     `query` (from the suggester) targets the IMPACT lead; absent → search by fact text.
     `context` = the study's identity — the verdict rejects pages merely on a similar
+    topic. `citing` = works citing this study (study-level, fetched once by the caller);
+    they go FIRST, being documents that demonstrably used this work, not just its
     topic."""
     assert claim.id is not None
+    cid = claim.id
     ctx = f"STUDY CONTEXT:\n{context}\n\n" if context else ""
-    for cand in web_search(query or claim.statement, max_results=max_candidates):
-        text = fetch_url_text(cand.url)
-        if not text:
-            continue
-        page = text[:page_chars]
-        user = f"{ctx}FACT: {claim.statement}\n\nPAGE ({cand.url}):\n{page}"
-        verdict = llm.structured(CORROBORATE_SYSTEM, user, Corroboration)
-        if not verdict.confirms or not verdict.quote.strip():
-            continue
-        ext_sid, _ = source_from_text(store, cand.url, text)
-        try:
-            ev = store.add_evidence(
-                ext_sid, verdict.quote, activity=activity, agent=agent
-            )
-        except SpanNotVerified:
-            continue  # LLM invented the quote — reject, try the next candidate
-        store.link_evidence(claim.id, ev)
-        return ev
-    return None
+
+    def first_confirmed(cands: Sequence[SearchResult], channel: str) -> int | None:
+        # the channel is recorded in prov:wasGeneratedBy: "…:citation" (someone who
+        # cited this work) is stronger evidence than "…:search" (a page found by words)
+        act = f"{activity}:{channel}" if activity else None
+        for cand in cands:
+            text = fetch_url_text(cand.url)
+            if not text:
+                continue
+            page = text[:page_chars]
+            user = f"{ctx}FACT: {claim.statement}\n\nPAGE ({cand.url}):\n{page}"
+            verdict = llm.structured(CORROBORATE_SYSTEM, user, Corroboration)
+            if not verdict.confirms or not verdict.quote.strip():
+                continue
+            ext_sid, _ = source_from_text(store, cand.url, text)
+            try:
+                ev = store.add_evidence(
+                    ext_sid, verdict.quote, activity=act, agent=agent
+                )
+            except SpanNotVerified:
+                continue  # LLM invented the quote — reject, try the next candidate
+            store.link_evidence(cid, ev)
+            return ev
+        return None
+
+    # citations first; the search engine only if they yield nothing (saves a search
+    # call per fact whenever a citing document already confirms the impact)
+    ev_id = first_confirmed(citing, "citation")
+    if ev_id is not None:
+        return ev_id
+    return first_confirmed(
+        web_search(query or claim.statement, max_results=max_candidates), "search"
+    )
+
+
+def citations_for(src: Source, max_results: int = 5) -> list[SearchResult]:
+    """Citing works for a source that has a DOI; [] otherwise. One call per source —
+    both the phase and the GUI go through here, so they cast the same net."""
+    doi = doi_of(src)
+    if not doi:
+        return []
+    return citing_works(
+        doi, max_results=max_results, contact_email=settings.contact_email
+    )
 
 
 @dataclass
@@ -94,8 +126,12 @@ class CorroboratePhase:
                 summary=f"source {self.source_id}: no facts "
                 f"(status={self.claim_status})",
             )
+        src = ctx.store.get_source(self.source_id)
         # the study's identity — keeps search and verdict tied to THIS study
-        context = study_context(ctx.store.get_source(self.source_id))
+        context = study_context(src)
+        # citation channel: one lookup per source, reused for every fact (impact is a
+        # property of the study). No DOI (e.g. an uploaded file) → empty, search only.
+        citing = citations_for(src)
         activity = f"corroborate:{self.source_id}"
         agent = ctx.llm.model
         produced: list[int] = []  # ids of confirming evidence
@@ -110,6 +146,7 @@ class CorroboratePhase:
                 claim,
                 query=lead.query if lead is not None else None,
                 context=context,
+                citing=citing,
                 max_candidates=self.max_candidates,
                 page_chars=self.page_chars,
                 activity=activity,

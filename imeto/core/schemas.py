@@ -75,4 +75,7 @@ class ImpactLead(BaseModel):
 class LeadSet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # phrase identifying THIS study (title / author surnames / project name); the code
+    # appends it to every query, so a topic query cannot drift into random pages
+    study_handle: str = ""
     leads: list[ImpactLead]
