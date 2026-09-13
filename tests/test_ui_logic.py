@@ -15,7 +15,6 @@ from imeto.core.schemas import (
 from imeto.registries.skills import SkillRegistry
 from imeto.ui.app import (
     apply_argument_decisions,
-    apply_decisions,
     argue_candidates,
     extract_candidates,
     extract_candidates_from_doi,
@@ -23,6 +22,8 @@ from imeto.ui.app import (
     facts_csv,
     facts_rows,
     load_source,
+    save_query,
+    set_accepted,
 )
 from imeto.worktypes import WorkType
 
@@ -62,6 +63,32 @@ def test_facts_rows_shows_provenance_and_external_mark():
     # CSV: headers + fact row, readable in Excel (BOM)
     text = Path(facts_csv(store, [c])).read_text(encoding="utf-8-sig")
     assert "Fact" in text and "System X was deployed" in text
+
+
+def test_fact_card_edits_write_straight_to_the_store():
+    # the card owns the fact: the checkbox is the gate, the textbox is the query
+    store = ProvenanceStore()
+    sid = store.add_source(Source(local_identifier="doc", full_text="A deployed. B."))
+    c1 = store.add_claim(sid, "A deployed.", "direct", [store.add_evidence(sid, "A")])
+    c2 = store.add_claim(sid, "B.", "direct", [store.add_evidence(sid, "B")])
+    store.upsert_lead(c1, "look for deployment", "deployment X municipality")
+
+    set_accepted(store, c1, True)
+    set_accepted(store, c2, False)
+    assert store.get_claim(c1).status == "accepted"
+    assert store.get_claim(c2).status == "rejected"
+
+    assert save_query(store, c1, "deployment X Mazovia 2025") is True  # human rewrites
+    lead1 = store.get_lead(c1)
+    assert lead1 is not None and lead1.query == "deployment X Mazovia 2025"
+    assert lead1.lead == "look for deployment"  # edit touches the query only
+
+    assert save_query(store, c2, "B in the press") is True  # model gave none
+    lead2 = store.get_lead(c2)
+    assert lead2 is not None and lead2.query == "B in the press"
+
+    assert save_query(store, c1, "  ") is False  # emptied → lead cleared
+    assert store.get_lead(c1) is None
 
 
 class FakeLLM:
@@ -199,19 +226,3 @@ def test_argue_over_accepted_facts(tmp_path: Path):
     acc, rej = apply_argument_decisions(store, [out[0][0]], [out[0][0]])
     assert (acc, rej) == (1, 0)
     assert store.get_argument(out[0][0]).status == "accepted"
-
-
-def test_apply_decisions_accepts_selected_rejects_rest():
-    store = ProvenanceStore()
-    src = Source(local_identifier="d", full_text="resolution no. 12 and text")
-    sid = store.add_source(src)
-    e1 = store.add_evidence(sid, "resolution no. 12")
-    e2 = store.add_evidence(sid, "text")
-    c1 = store.add_claim(sid, "a", "direct", [e1])
-    c2 = store.add_claim(sid, "b", "direct", [e2])
-
-    acc, rej = apply_decisions(store, [c1, c2], [c1])
-
-    assert (acc, rej) == (1, 1)
-    assert store.get_claim(c1).status == "accepted"
-    assert store.get_claim(c2).status == "rejected"

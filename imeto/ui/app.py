@@ -24,10 +24,11 @@ from imeto.ingest.sources import (
 )
 from imeto.phases.argumenter import ArgumenterPhase
 from imeto.phases.base import PhaseContext
-from imeto.phases.corroborate import corroborate_one
+from imeto.phases.corroborate import citations_for, corroborate_one
 from imeto.phases.extract import ExtractPhase
-from imeto.phases.suggest import run_suggester, study_context
+from imeto.phases.suggest import iter_suggester, study_context
 from imeto.registries.skills import SkillRegistry
+from imeto.tools.citations import doi_of
 from imeto.worktypes import WorkType
 
 Candidates = list[tuple[int, str]]
@@ -74,10 +75,14 @@ def _context_window(text: str, start: int, end: int, pad: int = 120) -> str:
 
 
 def _impact_cell(store: ProvenanceStore, ev: Evidence) -> str:
-    """ "Impact" cell: quote + source as a clickable link when it's a URL."""
+    """ "Impact" cell: quote + source as a clickable link when it's a URL. The channel
+    marker matters for judging: 📚 = a work that CITES this study (it demonstrably used
+    it), 🔍 = a page a keyword search turned up."""
     ident = store.get_source(ev.source_id).local_identifier
     src = f"[{ident}]({ident})" if ident.startswith("http") else ident
-    return f"„{ev.quote}” — {src}"
+    act = ev.generated_by_activity or ""
+    mark = "📚 cited by" if act.endswith(":citation") else "🔍 web"
+    return f"{mark}: „{ev.quote}” — {src}"
 
 
 def facts_rows(store: ProvenanceStore, claim_ids: list[int]) -> list[list[str]]:
@@ -106,6 +111,27 @@ def facts_rows(store: ProvenanceStore, claim_ids: list[int]) -> list[list[str]]:
             [str(n), claim.kind, claim.statement, cytat, pozycja, kontekst, slad, wplyw]
         )
     return rows
+
+
+def save_query(store: ProvenanceStore, claim_id: int, query: str) -> bool:
+    """Writes a query edited on the fact's card. The query is a CANDIDATE (Z1) — the
+    human owns it. Emptied → the lead is cleared and corroboration falls back to the
+    fact's own text. Returns whether a query is now stored."""
+    q = query.strip()
+    if not q:
+        store.clear_lead(claim_id)
+        return False
+    lead = store.get_lead(claim_id)
+    store.upsert_lead(claim_id, lead.lead if lead is not None else "", q)
+    return True
+
+
+def set_accepted(store: ProvenanceStore, claim_id: int, accepted: bool) -> None:
+    """The human gate, toggled straight on the fact's card."""
+    if accepted:
+        store.accept_claim(claim_id, by="operator")
+    else:
+        store.reject_claim(claim_id, by="operator")
 
 
 def facts_csv(store: ProvenanceStore, claim_ids: list[int]) -> str:
@@ -249,22 +275,6 @@ def load_source(
     return sid, _source_preview(store, sid)
 
 
-def apply_decisions(
-    store: ProvenanceStore,
-    all_ids: list[int],
-    accepted_ids: list[int],
-    by: str = "operator",
-) -> tuple[int, int]:
-    """Accepts the selected claims, rejects the rest."""
-    accepted = set(accepted_ids)
-    for cid in all_ids:
-        if cid in accepted:
-            store.accept_claim(cid, by=by)
-        else:
-            store.reject_claim(cid, by=by)
-    return len(accepted), len(all_ids) - len(accepted)
-
-
 def argue_candidates(
     store: ProvenanceStore,
     skills: SkillRegistry,
@@ -317,27 +327,28 @@ def build_ui() -> Any:
             json_mode=settings.llm_json_mode,
         )
 
-    def on_load(mode, document, doi, url, full_text, work_type):  # type: ignore[no-untyped-def]
+    # `tick` (gr.State) is bumped whenever the fact cards must be rebuilt from the
+    # store; @gr.render below re-runs on its change. We do NOT bump it mid-stream —
+    # rebuilding the cards would wipe a query the human is editing.
+    def on_load(mode, document, doi, url, full_text, work_type, tick):  # type: ignore[no-untyped-def]
         # fetch/create the source WITHOUT extracting, so the human can review it first
-        reset = gr.update(choices=[], value=[], visible=False)
-        hide_table = gr.update(visible=False)
         try:
             sid, preview = load_source(
                 store, mode, document, doi, url, WorkType(work_type), full_text
             )
+        # all_ids changes by itself → the render fires; skip the tick or it fires twice
         except Exception as e:  # noqa: BLE001
-            return None, f"Error: {e}", reset, [], hide_table
-        return sid, preview, reset, [], hide_table
+            return None, f"Error: {e}", [], gr.skip()
+        return sid, preview, [], gr.skip()
 
-    def on_extract(source_id, work_type, base_url, model):  # type: ignore[no-untyped-def]
+    def on_extract(source_id, work_type, base_url, model, tick):  # type: ignore[no-untyped-def]
         # generator: shows progress right away — extraction takes ~1-2 min (local model)
-        empty = gr.update(choices=[], value=[], visible=False)
-        keep = gr.skip()  # don't touch the claims table on early exits/ticks
+        keep = gr.skip()  # don't touch the cards on early exits/ticks
         if not source_id:
-            yield empty, [], "Fetch a source first.", keep
+            yield "Fetch a source first.", keep, keep
             return
         if not model:
-            yield empty, [], "Provide the model name.", keep
+            yield "Provide the model name.", keep, keep
             return
         wt = WorkType(work_type)
         llm = _llm(base_url, model)
@@ -371,26 +382,18 @@ def build_ui() -> Any:
             else:
                 detail = f" — {prog['msg']}" if prog["msg"] else ""
                 msg = f"⏳ Extracting facts… {el} s{detail}"
-            # only the status ticks; we leave the claims list to not break its render
-            yield gr.skip(), gr.skip(), msg, keep
+            yield msg, keep, keep  # only the status ticks; cards stay as they are
             th.join(timeout=1.0)
         if "err" in box:
-            yield empty, [], f"Error: {box['err']}", keep
+            yield f"Error: {box['err']}", [], keep
             return
-        cands = box["ok"]
-        choices = [(label, cid) for cid, label in cands]
-        ids = [cid for cid, _ in cands]
-        table = gr.update(value=facts_rows(store, ids), visible=True)
-        yield (
-            gr.update(choices=choices, value=ids, visible=True),
-            ids,
-            f"Extracted {len(ids)}.",
-            table,
-        )
+        ids = [cid for cid, _ in box["ok"]]
+        yield f"Extracted {len(ids)} facts — tick the ones you keep.", ids, keep
 
-    def on_decide(selected, all_ids):  # type: ignore[no-untyped-def]
-        acc, rej = apply_decisions(store, all_ids, selected)
-        return f"Accepted {acc} facts, rejected {rej}."
+    def on_accept_all(ids, tick):  # type: ignore[no-untyped-def]
+        for cid in ids:
+            set_accepted(store, cid, True)
+        return f"Approved {len(ids)} facts (untick any on its card).", tick + 1
 
     def on_argue(source_id, base_url, model):  # type: ignore[no-untyped-def]
         empty = gr.update(choices=[], value=[], visible=False)
@@ -412,39 +415,69 @@ def build_ui() -> Any:
         acc, rej = apply_argument_decisions(store, all_ids, selected)
         return f"Accepted {acc} arguments, rejected {rej}."
 
-    def on_corroborate(source_id, base_url, model):  # type: ignore[no-untyped-def]
-        keep = gr.skip()  # don't touch the table during progress
+    def on_suggest(source_id, base_url, model, tick):  # type: ignore[no-untyped-def]
+        # proposes a query per fact and STOPS — the human reviews/edits before searching
+        keep = gr.skip()
         if not source_id:
             yield "First extract and approve facts.", keep
             return
         claims = store.claims_for_source(int(source_id), status="accepted")
         if not claims:
-            yield "No approved facts — approve facts first.", keep
+            yield "No approved facts — tick facts on their cards first.", keep
             return
-        accepted_ids = [c.id for c in claims if c.id is not None]
+        n = len(claims)
+        stop_flag.clear()
+        yield f"⏳ Proposing queries for {n} facts…", keep
+        try:  # one model call per fact — a batched one overruns the timeout
+            for i, _ in enumerate(
+                iter_suggester(store, _llm(base_url, model), skills, int(source_id)), 1
+            ):
+                yield f"⏳ Proposing queries… {i}/{n}", keep
+                if stop_flag.is_set():
+                    break
+        except Exception as e:  # noqa: BLE001
+            yield f"Error: {e}", tick + 1
+            return
+        yield "Queries proposed — edit them on the cards, then corroborate.", tick + 1
 
-        def table_now() -> Any:
-            return gr.update(value=facts_rows(store, accepted_ids), visible=True)
-
+    def on_corroborate(source_id, base_url, model, tick):  # type: ignore[no-untyped-def]
+        keep = gr.skip()  # don't rebuild the cards during progress
+        if not source_id:
+            yield "First extract and approve facts.", keep
+            return
+        claims = store.claims_for_source(int(source_id), status="accepted")
+        if not claims:
+            yield "No approved facts — tick facts on their cards first.", keep
+            return
         llm = _llm(base_url, model)
         stop_flag.clear()
         activity = f"corroborate:{source_id}"
-        context = study_context(store.get_source(int(source_id)))
-        yield "⏳ Searching for leads (what to look for as impact evidence)…", keep
-        run_suggester(
-            store, llm, skills, int(source_id)
-        )  # saves query + trail per fact
-        # table immediately shows the trail marks (candidate/internal) and queries
-        yield "⏳ Leads saved — searching for corroboration…", table_now()
-        # search EVERY fact; the 'internal' trail is only a hint, not a filter
+        src = store.get_source(int(source_id))
+        context = study_context(src)
+        yield "⏳ Asking OpenAlex who cites this work…", keep
+        citing = citations_for(src)  # once per source, reused for every fact
+        if citing:
+            found = "\n".join(f"    📚 {c.title[:70]} — {c.url}" for c in citing)
+            head = f"📚 {len(citing)} citing works (checked before the search engine):"
+            yield f"{head}\n{found}", keep
+        else:
+            why = "no DOI" if doi_of(src) is None else "none found"
+            yield f"📚 Citation channel: {why} — searching the web only.", keep
         targets = [c for c in claims if c.id is not None]
+        # queries come from the cards; none stored → the human skipped the propose
+        # step, so propose them here (one click still works end to end)
+        if not any(store.get_lead(cid) for cid in [c.id for c in targets] if cid):
+            for i, _ in enumerate(
+                iter_suggester(store, llm, skills, int(source_id)), 1
+            ):
+                yield f"⏳ Proposing search queries… {i}/{len(targets)}", keep
+                if stop_flag.is_set():
+                    break
         lines: list[str] = []
         for i, claim in enumerate(targets, 1):
             if stop_flag.is_set():
-                yield (
-                    "\n".join([*lines, f"⏹ Stopped ({i - 1}/{len(targets)})."]),
-                    table_now(),
-                )
+                stopped = f"⏹ Stopped ({i - 1}/{len(targets)})."
+                yield "\n".join([*lines, stopped]), tick + 1
                 return
             lead = store.get_lead(claim.id) if claim.id is not None else None
             q = lead.query if lead is not None else claim.statement
@@ -459,6 +492,7 @@ def build_ui() -> Any:
                     claim,
                     query=lead.query if lead is not None else None,
                     context=context,
+                    citing=citing,
                     activity=activity,
                     agent=llm.model,
                 )
@@ -471,7 +505,43 @@ def build_ui() -> Any:
                 lines.append(f"- ✅ **{claim.statement}**")
                 lines.append(f"    „{ev.quote}” — {src.local_identifier}")
         msg = "\n".join(lines) if lines else "No corroboration found on the web."
-        yield msg, table_now()
+        yield msg, tick + 1  # cards now show the ✅ evidence
+
+    def fact_card(n: int, cid: int) -> None:
+        """One fact, one card: the gate, its verbatim grounds, the editable query and
+        what the web turned up — instead of the same fact spread over three tables."""
+        claim = store.get_claim(cid)
+        src = store.get_source(claim.source_id)
+        evs = store.evidence_for_claim(cid)
+        own = [e for e in evs if e.source_id == claim.source_id]
+        ext = [e for e in evs if e.source_id != claim.source_id]
+        lead = store.get_lead(cid)
+        with gr.Group():
+            gate = gr.Checkbox(
+                value=claim.status == "accepted",
+                label=f"#{n} · {claim.kind} · {claim.statement}",
+                container=False,
+            )
+            if own:
+                gr.Markdown(
+                    "  \n".join(f"„{e.quote}” · {e.start}–{e.end}" for e in own)
+                )
+                with gr.Accordion("Context in source", open=False):
+                    gr.Markdown(
+                        _context_window(src.full_text, own[0].start, own[0].end)
+                    )
+            query = gr.Textbox(
+                value=lead.query if lead is not None else "",
+                label="🔍 Search query (editable; empty = search by the fact's text)",
+                lines=1,
+            )
+            if ext:
+                gr.Markdown("  \n".join(f"✅ {_impact_cell(store, e)}" for e in ext))
+            elif claim.external_trail == "internal":
+                gr.Markdown("*no external trail expected (model's hint)*")
+            # written straight through — no separate "save" button to forget
+            gate.change(lambda v, c=cid: set_accepted(store, c, bool(v)), inputs=gate)
+            query.blur(lambda v, c=cid: save_query(store, c, v), inputs=query)
 
     def on_stop():  # type: ignore[no-untyped-def]
         # cooperative stop: extraction finishes the current chunk, corroboration the
@@ -486,83 +556,99 @@ def build_ui() -> Any:
             "→ assessment by Criterion III"
         )
 
-        with gr.Accordion("Model settings", open=False):
-            base_url = gr.Textbox(label="Model address", value=settings.llm_base_url)
-            model = gr.Textbox(label="Model", value=settings.llm_model)
-
-        gr.Markdown("## Source")
-        mode = gr.Radio(choices=["File", "DOI", "URL"], value="File", label="Mode")
-        document = gr.File(label="Document (PDF/DOCX)", type="filepath")
-        work_type = gr.Dropdown(
-            label="Work type",
-            choices=[wt.value for wt in WorkType],
-            value=WorkType.report.value,
-        )
-        doi = gr.Textbox(label="DOI", placeholder="10.1234/...")
-        url = gr.Textbox(label="URL", placeholder="https://...")
-        full_text = gr.Checkbox(label="OA full text", value=False)
-        load_btn = gr.Button("Fetch source", variant="primary")
-        source_preview = gr.Markdown()
-
-        gr.Markdown("## Step 1 · Facts")
-        extract_btn = gr.Button("Extract facts from source", variant="primary")
-        candidates = gr.CheckboxGroup(
-            label="Select to accept", choices=[], visible=False
-        )
-        decide_btn = gr.Button("Approve selected facts")
-        status = gr.Markdown()
-        facts_table = gr.Dataframe(
-            headers=FACTS_HEADERS,
-            datatype=FACTS_DATATYPES,
-            column_widths=FACTS_WIDTHS,
-            label="Facts with provenance and context",
-            interactive=False,
-            wrap=True,
-            visible=False,
-        )
-        download_btn = gr.DownloadButton("Download table (CSV)")
-
-        gr.Markdown("## Step 2 · Impact corroboration on the web")
-        corroborate_btn = gr.Button("Corroborate facts on the web")
-        corr_output = gr.Markdown()
-
-        gr.Markdown("## Step 3 · Assessment by Criterion III")
-        argue_btn = gr.Button("Assess by Criterion III", variant="primary")
-        arguments = gr.CheckboxGroup(
-            label="Select to accept", choices=[], visible=False
-        )
-        decide_args_btn = gr.Button("Approve selected arguments")
-        arg_status = gr.Markdown()
-
-        stop_btn = gr.Button("Stop")
-
         source_id = gr.State(None)
         all_ids = gr.State([])
         arg_ids = gr.State([])
+        tick = gr.State(0)  # bump = rebuild the fact cards from the store
+
+        with gr.Row():
+            with gr.Column(scale=2):  # controls — every button lives here
+                with gr.Accordion("Model settings", open=False):
+                    base_url = gr.Textbox(
+                        label="Model address", value=settings.llm_base_url
+                    )
+                    model = gr.Textbox(label="Model", value=settings.llm_model)
+
+                gr.Markdown("### Source")
+                mode = gr.Radio(
+                    choices=["File", "DOI", "URL"], value="File", label="Mode"
+                )
+                document = gr.File(label="Document (PDF/DOCX)", type="filepath")
+                work_type = gr.Dropdown(
+                    label="Work type",
+                    choices=[wt.value for wt in WorkType],
+                    value=WorkType.report.value,
+                )
+                doi = gr.Textbox(label="DOI", placeholder="10.1234/...")
+                url = gr.Textbox(label="URL", placeholder="https://...")
+                full_text = gr.Checkbox(label="OA full text", value=False)
+                load_btn = gr.Button("Fetch source", variant="primary")
+                source_preview = gr.Markdown()
+
+                gr.Markdown("### Step 1 · Facts")
+                extract_btn = gr.Button("Extract facts from source", variant="primary")
+                accept_all_btn = gr.Button("Approve all facts")
+                status = gr.Markdown()
+                download_btn = gr.DownloadButton("Download table (CSV)")
+
+                gr.Markdown("### Step 2 · Impact corroboration on the web")
+                suggest_btn = gr.Button("Propose search queries")
+                corroborate_btn = gr.Button("Corroborate facts on the web")
+                lead_status = gr.Markdown()
+                corr_output = gr.Markdown()
+
+                gr.Markdown("### Step 3 · Assessment by Criterion III")
+                argue_btn = gr.Button("Assess by Criterion III", variant="primary")
+
+                stop_btn = gr.Button("Stop")
+
+            with gr.Column(scale=3):  # one card per fact, nothing duplicated
+                gr.Markdown("### Facts")
+
+                @gr.render(inputs=[all_ids, tick])  # type: ignore[untyped-decorator]
+                def render_facts(ids: list[int], _tick: int) -> None:
+                    if not ids:
+                        gr.Markdown("*Fetch a source and extract to see facts here.*")
+                        return
+                    for n, cid in enumerate(ids, 1):
+                        fact_card(n, cid)
+
+                gr.Markdown("### Assessment")
+                arguments = gr.CheckboxGroup(
+                    label="Select to accept", choices=[], visible=False
+                )
+                decide_args_btn = gr.Button("Approve selected arguments")
+                arg_status = gr.Markdown()
 
         load_btn.click(
             on_load,
-            [mode, document, doi, url, full_text, work_type],
-            [source_id, source_preview, candidates, all_ids, facts_table],
+            [mode, document, doi, url, full_text, work_type, tick],
+            [source_id, source_preview, all_ids, tick],
         )
         extract_btn.click(
             on_extract,
-            [source_id, work_type, base_url, model],
-            [candidates, all_ids, status, facts_table],
+            [source_id, work_type, base_url, model, tick],
+            [status, all_ids, tick],
         )
-        decide_btn.click(on_decide, [candidates, all_ids], [status])
+        accept_all_btn.click(on_accept_all, [all_ids, tick], [status, tick])
         download_btn.click(lambda ids: facts_csv(store, ids), all_ids, download_btn)
         ev_argue = argue_btn.click(
             on_argue, [source_id, base_url, model], [arguments, arg_ids, arg_status]
         )
         decide_args_btn.click(on_decide_args, [arguments, arg_ids], [arg_status])
+        ev_suggest = suggest_btn.click(
+            on_suggest, [source_id, base_url, model, tick], [lead_status, tick]
+        )
         ev_corr = corroborate_btn.click(
-            on_corroborate, [source_id, base_url, model], [corr_output, facts_table]
+            on_corroborate, [source_id, base_url, model, tick], [corr_output, tick]
         )
         # extraction stops cooperatively (thread + flag) — we do NOT cancel its
         # generator, since only it shows closure. Corroboration/scoring we also cancel.
         stop_btn.click(
-            on_stop, None, [status, corr_output], cancels=[ev_corr, ev_argue]
+            on_stop,
+            None,
+            [status, corr_output],
+            cancels=[ev_corr, ev_argue, ev_suggest],
         )
     return ui
 
