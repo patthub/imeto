@@ -25,7 +25,7 @@ character-exact span in its source.
 - **`orchestration/`** — explicit linear pipeline (`PIPELINE = [...]` list, no `while True`); `gates.py` blocks for human approval when `PhaseResult.needs_human`.
 - **`registries/`** — pluggable `ToolRegistry`, `SkillRegistry`, `PhaseRegistry`.
 - **`knowledge/`** — domain expertise as **data** (`.md` files, few-shot examples), editable without touching code. Loaded into prompts on demand via `SkillRegistry`. Not code, not constants.
-- **`ui/` (Gradio), `api/` (FastAPI)** — thin skins that call the core. Never put phase logic in UI callbacks or route handlers.
+- **`ui/`** — web GUI: `app.py` (framework-free views + phases as progress-event generators), `server.py` (FastAPI, NDJSON streaming); the front lives in `web/` (React 19 + Vite + Tailwind v4 + shadcn/ui, TanStack Query). Thin skins that call the core. Never put phase logic in route handlers or React components.
 
 ## Non-negotiable rules (from the TDD)
 
@@ -36,12 +36,12 @@ character-exact span in its source.
 - **Tools return candidates, not verdicts.** A human decides what is evidence. Any tool output that becomes evidence goes through the same source/evidence gate as extraction.
 - **Config is typed and centralized** in `config.py` (`pydantic-settings`), not scattered `os.getenv`. Secrets only from env/`.env`.
 - **Every core module has a test that runs without a live model** — mock the LLM (respx / stub responses). Model quality is measured separately via eval, not unit tests.
-- Deferred by design (do not introduce early): Alembic (POC uses `SQLModel.metadata.create_all`), Postgres/psycopg, `sentence-transformers`, FastAPI. See TDD §3.3–3.4.
+- Deferred by design (do not introduce early): Alembic (POC uses `SQLModel.metadata.create_all`), Postgres/psycopg, `sentence-transformers`. See TDD §3.3–3.4.
 
 ## Planned stack
 
 Python 3.12+ · Pydantic v2 · `openai` SDK (+ httpx) · SQLModel over SQLite · pdfplumber /
-python-docx · Typer (CLI) · Gradio (first GUI) · pytest + respx · ruff + mypy · uv for env/lock.
+python-docx · Typer (CLI) · FastAPI + React/Vite front (`web/`) · pytest + respx · ruff + mypy · uv for env/lock.
 
 Note: the current `.venv` is Python 3.14 with only pip. Recreate per the target when scaffolding.
 
@@ -53,6 +53,9 @@ export LLM_BASE_URL=http://localhost:8888/v1
 export LLM_API_KEY=sk-...
 export LLM_MODEL="<id from /v1/models>"
 python -m imeto.cli run data/sprawozdanie_test.docx
+
+imeto ui                      # GUI at http://127.0.0.1:8000 (needs: cd web && npm i && npm run build)
+cd web && npm run dev         # front dev server with HMR, proxies /api to :8000
 
 pytest                        # all tests
 pytest tests/test_span_verification.py::<name>   # single test

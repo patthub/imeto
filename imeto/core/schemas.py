@@ -6,7 +6,7 @@ The "chain of evidence" rule: every fact must point to the verbatim source
 fragments it rests on (>=1). A fact's `kind` separates what is stated explicitly
 from what is inferred — the two never conflate."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -33,6 +33,17 @@ class Extraction(BaseModel):
 
 # for — fact supports meeting the criterion; against — undermines it; gap — a key gap.
 ArgSide = Literal["for", "against", "gap"]
+# spheres of the non-academic environment named by Criterion III itself
+Sphere = Literal[
+    "economy",
+    "public_administration",
+    "health",
+    "culture",
+    "environment",
+    "security",
+    "other",
+]
+SPHERES: tuple[str, ...] = get_args(Sphere)
 
 
 class ProposedArgument(BaseModel):
@@ -41,6 +52,7 @@ class ProposedArgument(BaseModel):
     side: ArgSide
     statement: NonBlank  # argument in your own words
     based_on: list[int]  # FACT numbers (1-based) the argument rests on
+    sphere: Sphere | None = None  # where the impact lands; None = unclear/gap
 
 
 class Argumentation(BaseModel):

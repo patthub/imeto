@@ -1,23 +1,26 @@
-"""Gradio GUI — thin skin: upload/fetch source → claims → approve →
-score by Criterion III (FOR/AGAINST/GAPS). Logic in the core; here just calls
-and widgets.
+"""GUI logic, framework-free: JSON-ready views of the store and the long operations
+as generators of progress events. The HTTP skin is `server.py`, the front is `web/`.
 
-The logic (extract_* / apply_* / argue_*) is decoupled from Gradio, testable without UI.
-`import gradio` sits inside build_ui."""
+Everything here is testable without a browser and without a live model."""
 
 import csv
+import functools
+import re
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import replace
-from typing import Any, Literal
+from datetime import date
+from typing import Any
 
 from imeto.config import settings
 from imeto.core.llm import LLMClient
-from imeto.core.provenance import Evidence, ProvenanceStore
+from imeto.core.provenance import Argument, Claim, Evidence, ProvenanceStore, Source
+from imeto.core.schemas import SPHERES
 from imeto.ingest.loaders import fetch_by_doi, fetch_oa_fulltext
 from imeto.ingest.sources import (
+    FABIO_WEBPAGE,
     source_from_fetched,
     source_from_file,
     source_from_url,
@@ -28,12 +31,16 @@ from imeto.phases.corroborate import citations_for, corroborate_one
 from imeto.phases.extract import ExtractPhase
 from imeto.phases.suggest import iter_suggester, study_context
 from imeto.registries.skills import SkillRegistry
+from imeto.tools import signals
 from imeto.tools.citations import doi_of
-from imeto.worktypes import WorkType
+from imeto.worktypes import FABIO, WorkType
 
 Candidates = list[tuple[int, str]]
+# progress of a long operation: {"status": …} replaces the previous status line,
+# {"log": …} is a line worth keeping (a confirmation, a citing work)
+Event = dict[str, str]
 
-# claims table: all visible with provenance and context, nothing vanishes silently
+# CSV export: all visible with provenance and context, nothing vanishes silently
 FACTS_HEADERS = [
     "No.",
     "Kind",
@@ -45,49 +52,44 @@ FACTS_HEADERS = [
     "Impact (web)",
 ]
 
-# markdown in text columns → cells render like prose (wrapping, links), not a
-# cramped grid; narrow columns (Nr/Rodzaj/Pozycja) stay plain text
-_DType = Literal["str", "markdown"]
-FACTS_DATATYPES: list[_DType] = [
-    "str",
-    "str",
-    "markdown",
-    "markdown",
-    "str",
-    "markdown",
-    "markdown",
-    "markdown",
-]
-FACTS_WIDTHS: list[str | int] = ["4%", "9%", "20%", "19%", "7%", "19%", "12%", "10%"]
-
 _TRAIL_MARK = {
     "candidate": "🔍",
     "internal": "internal (hint)",
     "unknown": "—",
 }
 
+_WORK_TYPE = {uri: wt for wt, uri in FABIO.items()}
+
+
+def _around(text: str, start: int, end: int, pad: int = 120) -> tuple[str, str]:
+    """Text before and after a quote — the fact seen in its sentence, not alone."""
+    a, b = max(0, start - pad), min(len(text), end + pad)
+    before = ("…" if a > 0 else "") + " ".join(text[a:start].split())
+    after = " ".join(text[end:b].split()) + ("…" if b < len(text) else "")
+    return before, after
+
 
 def _context_window(text: str, start: int, end: int, pad: int = 120) -> str:
-    """Text window around the quote — claim seen in sentence context, not alone."""
-    a, b = max(0, start - pad), min(len(text), end + pad)
-    snip = " ".join(text[a:b].split())
-    return ("…" if a > 0 else "") + snip + ("…" if b < len(text) else "")
+    before, after = _around(text, start, end, pad)
+    return " ".join(p for p in (before, " ".join(text[start:end].split()), after) if p)
+
+
+def _channel(ev: Evidence) -> str:
+    """citation = a work that CITES this study (it demonstrably used it);
+    search = a page a keyword search turned up. Matters when judging."""
+    act = ev.generated_by_activity or ""
+    return "citation" if act.endswith(":citation") else "search"
 
 
 def _impact_cell(store: ProvenanceStore, ev: Evidence) -> str:
-    """ "Impact" cell: quote + source as a clickable link when it's a URL. The channel
-    marker matters for judging: 📚 = a work that CITES this study (it demonstrably used
-    it), 🔍 = a page a keyword search turned up."""
     ident = store.get_source(ev.source_id).local_identifier
-    src = f"[{ident}]({ident})" if ident.startswith("http") else ident
-    act = ev.generated_by_activity or ""
-    mark = "📚 cited by" if act.endswith(":citation") else "🔍 web"
-    return f"{mark}: „{ev.quote}” — {src}"
+    mark = "📚 cited by" if _channel(ev) == "citation" else "🔍 web"
+    return f"{mark}: „{ev.quote}” — {ident}"
 
 
 def facts_rows(store: ProvenanceStore, claim_ids: list[int]) -> list[list[str]]:
-    """Claims table rows: kind, statement, verbatim grounds + position, surroundings,
-    and external impact corroboration (empty = „—", i.e. none / not searched)."""
+    """Claims table rows (CSV): kind, statement, verbatim grounds + position,
+    surroundings, and external impact corroboration (empty = „—")."""
     rows: list[list[str]] = []
     for n, cid in enumerate(claim_ids, 1):
         claim = store.get_claim(cid)
@@ -113,27 +115,6 @@ def facts_rows(store: ProvenanceStore, claim_ids: list[int]) -> list[list[str]]:
     return rows
 
 
-def save_query(store: ProvenanceStore, claim_id: int, query: str) -> bool:
-    """Writes a query edited on the fact's card. The query is a CANDIDATE (Z1) — the
-    human owns it. Emptied → the lead is cleared and corroboration falls back to the
-    fact's own text. Returns whether a query is now stored."""
-    q = query.strip()
-    if not q:
-        store.clear_lead(claim_id)
-        return False
-    lead = store.get_lead(claim_id)
-    store.upsert_lead(claim_id, lead.lead if lead is not None else "", q)
-    return True
-
-
-def set_accepted(store: ProvenanceStore, claim_id: int, accepted: bool) -> None:
-    """The human gate, toggled straight on the fact's card."""
-    if accepted:
-        store.accept_claim(claim_id, by="operator")
-    else:
-        store.reject_claim(claim_id, by="operator")
-
-
 def facts_csv(store: ProvenanceStore, claim_ids: list[int]) -> str:
     """Writes the claims table to CSV (a wide table is handier in a spreadsheet than in
     the browser). utf-8-sig BOM → Excel reads Polish characters correctly."""
@@ -145,6 +126,272 @@ def facts_csv(store: ProvenanceStore, claim_ids: list[int]) -> str:
         w.writerow(FACTS_HEADERS)
         w.writerows(facts_rows(store, claim_ids))
     return path
+
+
+# --- views (what the front renders) ---
+
+
+def is_study(src: Source) -> bool:
+    """A source the operator brought in — not a web page fetched as impact evidence.
+    ponytail: tells them apart by FaBiO type; a `role` column if a study is ever a
+    WebPage."""
+    return src.fabio_type != FABIO_WEBPAGE
+
+
+def source_title(src: Source) -> str:
+    if src.title:
+        return src.title
+    ident = src.local_identifier
+    return ident if ident.startswith("http") else ident.rsplit("/", 1)[-1]
+
+
+def visible_claims(store: ProvenanceStore, source_id: int) -> list[Claim]:
+    """The source's facts, minus those superseded by a later extraction run (rejected
+    by `extract:…`, not by a human — a human's rejection stays visible to undo)."""
+    return [
+        c
+        for c in store.claims_for_source(source_id)
+        if not (c.status == "rejected" and (c.approved_by or "").startswith("extract:"))
+    ]
+
+
+def fact_view(store: ProvenanceStore, src: Source, claim: Claim) -> dict[str, Any]:
+    assert claim.id is not None
+    evs = store.evidence_for_claim(claim.id)
+    grounds = []
+    for e in evs:
+        if e.source_id == claim.source_id:
+            before, after = _around(src.full_text, e.start, e.end)
+            grounds.append(
+                {"quote": e.quote, "start": e.start, "end": e.end}
+                | {"before": before, "after": after}
+            )
+    impact = [
+        {
+            "quote": e.quote,
+            "url": store.get_source(e.source_id).local_identifier,
+            "channel": _channel(e),
+        }
+        for e in evs
+        if e.source_id != claim.source_id
+    ]
+    lead = store.get_lead(claim.id)
+    return {
+        "id": claim.id,
+        "kind": claim.kind,
+        "statement": claim.statement,
+        "status": claim.status,
+        "trail": claim.external_trail,
+        "query": lead.query if lead is not None else "",
+        "grounds": grounds,
+        "impact": impact,
+    }
+
+
+def argument_view(store: ProvenanceStore, arg: Argument) -> dict[str, Any]:
+    assert arg.id is not None
+    return {
+        "id": arg.id,
+        "side": arg.side,
+        "statement": arg.statement,
+        "status": arg.status,
+        "sphere": arg.sphere,
+        "facts": [c.statement for c in store.claims_for_argument(arg.id)],
+    }
+
+
+def sources_list(store: ProvenanceStore) -> list[dict[str, Any]]:
+    """Sidebar and dashboard rows: each study with the counts that say where it stands.
+    ponytail: a few queries per fact — fine for one operator's library; one aggregate
+    query in the store if the dashboard gets slow."""
+    out: list[dict[str, Any]] = []
+    for s in store.list_sources():
+        if s.id is None or not is_study(s):
+            continue
+        claims = visible_claims(store, s.id)
+        ids = [c.id for c in claims if c.id is not None]
+        doi = doi_of(s)
+        out.append(
+            {
+                "id": s.id,
+                "title": source_title(s),
+                "sub": f"doi:{doi}" if doi else s.local_identifier.rsplit("/", 1)[-1],
+                "facts": len(claims),
+                "candidate": sum(c.status == "candidate" for c in claims),
+                "accepted": sum(c.status == "accepted" for c in claims),
+                "queries": sum(store.get_lead(i) is not None for i in ids),
+                "impact": sum(bool(store.external_evidence_for_claim(i)) for i in ids),
+                "arguments": len(store.arguments_for_source(s.id)),
+            }
+        )
+    return out
+
+
+def source_view(store: ProvenanceStore, source_id: int) -> dict[str, Any]:
+    s = store.get_source(source_id)
+    text = s.full_text or ""
+    return {
+        "id": source_id,
+        "title": source_title(s),
+        "identifier": s.local_identifier,
+        "type": s.fabio_type.rsplit("/", 1)[-1] if s.fabio_type else None,
+        "language": s.language,
+        "doi": doi_of(s),
+        "chars": len(text),
+        "head": " ".join(text[:600].split()),
+        "signals": store.get_signals(source_id),
+        "facts": [fact_view(store, s, c) for c in visible_claims(store, source_id)],
+        "arguments": [
+            argument_view(store, a) for a in store.arguments_for_source(source_id)
+        ],
+    }
+
+
+def with_reach(sig: dict[str, Any]) -> dict[str, Any]:
+    """Adds where the work's citations come from. Best effort: a failed lookup must
+    not block the import — the source just shows no reach."""
+    wid = sig.get("openalex_id")
+    if not wid:
+        return sig
+    try:
+        return {
+            **sig,
+            "reach": signals.work_reach(wid, params=settings.openalex_params),
+        }
+    except Exception:  # noqa: BLE001 — reach is context, never a blocker
+        return sig
+
+
+def refresh_signals(store: ProvenanceStore, source_id: int) -> dict[str, Any] | None:
+    """Re-fetches a DOI source's OpenAlex context (it goes stale). A source without a
+    DOI has none — returns None, not an error. Pinned candidates are kept."""
+    doi = doi_of(store.get_source(source_id))
+    if doi is None:
+        return None
+    sig = with_reach(fetch_by_doi(doi, contact_email=settings.contact_email).signals)
+    store.set_signals(source_id, sig)
+    return store.get_signals(source_id)
+
+
+# --- impact leads (OpenAlex, SSH): candidates to follow, never evidence ---
+
+# an OpenAlex institution (I…) or author (A…) id — it lands inside a filter string,
+# so anything else (commas, colons) is rejected rather than escaped
+_ENTITY = re.compile(r"^[IA]\d{1,12}$")
+
+
+def check_entity(entity: str) -> str:
+    if not _ENTITY.match(entity):
+        raise ValueError(f"not an OpenAlex institution/author id: {entity!r}")
+    return entity
+
+
+# ponytail: in-process caches per (entity, day) — leads move slowly, a full scan of
+#           a big university costs ~100+ OpenAlex calls; a DB cache if restarts hurt
+@functools.cache
+def _partners(entity: str, day: date) -> list[dict[str, Any]]:
+    return signals.partners(entity, params=settings.openalex_params)
+
+
+@functools.cache
+def _reports(entity: str, day: date) -> list[dict[str, Any]]:
+    return signals.reports(entity, params=settings.openalex_params)
+
+
+@functools.cache
+def _citing(entity: str, day: date) -> dict[str, Any]:
+    return signals.citing_orgs(entity, params=settings.openalex_params)
+
+
+def leads_partners(entity: str) -> list[dict[str, Any]]:
+    return _partners(check_entity(entity), date.today())
+
+
+def leads_partner_works(entity: str, partner: str) -> list[dict[str, Any]]:
+    return signals.partner_works(
+        check_entity(entity), check_entity(partner), params=settings.openalex_params
+    )
+
+
+def leads_reports(entity: str) -> list[dict[str, Any]]:
+    return _reports(check_entity(entity), date.today())
+
+
+def leads_citing(entity: str) -> dict[str, Any]:
+    """Citing organizations without the internal batch bookkeeping."""
+    c = _citing(check_entity(entity), date.today())
+    return {"cited_works": c["cited_works"], "orgs": c["orgs"]}
+
+
+def build_case(store: ProvenanceStore, entity: str, citing: str, via: str = "") -> int:
+    """From a lead to a case: the citing document the human picked is pinned as the
+    first corroboration candidate on OUR work(s) it cites, each imported as a source.
+    The phases stay human-gated — this only sets the case up. Returns the first
+    source's id."""
+    c = _citing(check_entity(entity), date.today())
+    cited = {w for batch in c["batches"] for w in batch}
+    if not re.match(r"^W\d{1,12}$", citing):
+        raise ValueError(f"not an OpenAlex work id: {citing!r}")
+    links = signals.case_links(citing, cited, via=via, params=settings.openalex_params)
+    if not links["candidate"]["url"]:
+        raise ValueError("The citing document has no reachable URL.")
+    sids: list[int] = []
+    # ponytail: first 3 of our works it cites — a review citing 20 of ours is 20
+    #           cases; the human opens the rest from the list
+    for ours in [w for w in links["ours"] if w["doi"]][:3]:
+        sid = load_source(store, "DOI", None, ours["doi"], "", WorkType.article, True)
+        store.pin_candidate(sid, links["candidate"])
+        sids.append(sid)
+    if not sids:
+        raise ValueError("None of our works it cites has a DOI to import.")
+    return sids[0]
+
+
+def leads_citing_works(entity: str, org: str) -> list[dict[str, Any]]:
+    c = _citing(check_entity(entity), date.today())
+    batches = [c["batches"][i] for i in c["seen_in"].get(check_entity(org), [])]
+    return signals.org_citing_works(org, batches, params=settings.openalex_params)
+
+
+# --- edits (the human gate) ---
+
+
+def save_query(store: ProvenanceStore, claim_id: int, query: str) -> bool:
+    """Writes a query the human edited. The query is a CANDIDATE (Z1) — the human owns
+    it. Emptied → the lead is cleared and corroboration falls back to the fact's own
+    text. Returns whether a query is now stored."""
+    q = query.strip()
+    if not q:
+        store.clear_lead(claim_id)
+        return False
+    lead = store.get_lead(claim_id)
+    store.upsert_lead(claim_id, lead.lead if lead is not None else "", q)
+    return True
+
+
+def set_accepted(store: ProvenanceStore, claim_id: int, accepted: bool) -> None:
+    """The human gate on a fact."""
+    if accepted:
+        store.accept_claim(claim_id, by="operator")
+    else:
+        store.reject_claim(claim_id, by="operator")
+
+
+def set_argument_sphere(store: ProvenanceStore, arg_id: int, sphere: str) -> None:
+    """The human's correction; "" clears it."""
+    if sphere and sphere not in SPHERES:
+        raise ValueError(f"unknown sphere {sphere!r}")
+    store.set_argument_sphere(arg_id, sphere or None)
+
+
+def set_argument_accepted(store: ProvenanceStore, arg_id: int, accepted: bool) -> None:
+    if accepted:
+        store.accept_argument(arg_id, by="expert")
+    else:
+        store.reject_argument(arg_id, by="expert")
+
+
+# --- sources and phases ---
 
 
 def _run_phase(
@@ -224,26 +471,6 @@ def extract_candidates_from_url(
     )
 
 
-def _source_preview(store: ProvenanceStore, source_id: int) -> str:
-    """Human-readable summary of a loaded source, so the operator can confirm it is
-    the right work (title, type, language, how much text) before extracting."""
-    s = store.get_source(source_id)
-    text = s.full_text or ""
-    head = " ".join(text[:400].split())
-    lines = [f"**Loaded source #{source_id}**"]
-    if s.title:
-        lines.append(f"- Title: {s.title}")
-    if s.fabio_type:
-        lines.append(f"- Type: {s.fabio_type.rsplit('/', 1)[-1]}")
-    if s.language:
-        lines.append(f"- Language: {s.language}")
-    lines.append(f"- Identifier: {s.local_identifier}")
-    lines.append(f"- Text length: {len(text)} chars")
-    if head:
-        lines.append(f"\n> {head}{'…' if len(text) > 400 else ''}")
-    return "\n".join(lines)
-
-
 def load_source(
     store: ProvenanceStore,
     mode: str,
@@ -252,13 +479,14 @@ def load_source(
     url: str,
     work_type: WorkType,
     full_text: bool = False,
-) -> tuple[int, str]:
+) -> int:
     """Fetch/create the Source WITHOUT extracting, so the human reviews it first.
-    Returns (source_id, preview markdown). Raises ValueError on missing input."""
+    Raises ValueError on missing input."""
     if mode == "DOI":
         if not doi.strip():
             raise ValueError("Provide a DOI.")
         fetched = fetch_by_doi(doi.strip(), contact_email=settings.contact_email)
+        fetched = replace(fetched, signals=with_reach(fetched.signals))
         if full_text and fetched.oa_pdf_url:
             text = fetch_oa_fulltext(fetched.oa_pdf_url)
             if text:
@@ -272,7 +500,7 @@ def load_source(
         if not document:
             raise ValueError("Upload a document.")
         sid, _ = source_from_file(store, document, work_type)
-    return sid, _source_preview(store, sid)
+    return sid
 
 
 def argue_candidates(
@@ -294,368 +522,121 @@ def argue_candidates(
     return out
 
 
-def apply_argument_decisions(
+# --- long operations as event streams ---
+
+
+def extract_events(
     store: ProvenanceStore,
-    all_ids: list[int],
-    accepted_ids: list[int],
-    by: str = "expert",
-) -> tuple[int, int]:
-    accepted = set(accepted_ids)
-    for aid in all_ids:
-        if aid in accepted:
-            store.accept_argument(aid, by=by)
-        else:
-            store.reject_argument(aid, by=by)
-    return len(accepted), len(all_ids) - len(accepted)
+    skills: SkillRegistry,
+    source_id: int,
+    llm: LLMClient,
+    stop: threading.Event,
+) -> Iterator[Event]:
+    """Extraction in a thread, a status tick every second (a local model takes minutes).
+    Stop is cooperative: the current chunk finishes, then the phase halts."""
+    src = store.get_source(source_id)
+    wt = _WORK_TYPE.get(src.fabio_type, WorkType.report)
+    prog = {"msg": ""}
+    box: dict[str, Any] = {}
 
+    def note(m: str) -> None:
+        prog["msg"] = m
 
-def build_ui() -> Any:
-    import gradio as gr
-
-    store = ProvenanceStore(settings.db_url)
-    skills = SkillRegistry(settings.knowledge_dir)
-    # ponytail: one stop flag for the whole UI — enough with a single user
-    #           (one operation at a time); per-operation if concurrency appears.
-    stop_flag = threading.Event()
-
-    def _llm(base_url: str, model: str) -> LLMClient:
-        return LLMClient(
-            base_url=base_url,
-            api_key=settings.llm_api_key,
-            model=model,
-            temperature=settings.llm_temperature,
-            json_mode=settings.llm_json_mode,
-        )
-
-    # `tick` (gr.State) is bumped whenever the fact cards must be rebuilt from the
-    # store; @gr.render below re-runs on its change. We do NOT bump it mid-stream —
-    # rebuilding the cards would wipe a query the human is editing.
-    def on_load(mode, document, doi, url, full_text, work_type, tick):  # type: ignore[no-untyped-def]
-        # fetch/create the source WITHOUT extracting, so the human can review it first
+    def run() -> None:
         try:
-            sid, preview = load_source(
-                store, mode, document, doi, url, WorkType(work_type), full_text
-            )
-        # all_ids changes by itself → the render fires; skip the tick or it fires twice
-        except Exception as e:  # noqa: BLE001
-            return None, f"Error: {e}", [], gr.skip()
-        return sid, preview, [], gr.skip()
+            box["ok"] = _run_phase(store, skills, source_id, wt, llm, note, stop.is_set)
+        except Exception as e:  # noqa: BLE001 — re-raised in the caller's thread
+            box["err"] = e
 
-    def on_extract(source_id, work_type, base_url, model, tick):  # type: ignore[no-untyped-def]
-        # generator: shows progress right away — extraction takes ~1-2 min (local model)
-        keep = gr.skip()  # don't touch the cards on early exits/ticks
-        if not source_id:
-            yield "Fetch a source first.", keep, keep
-            return
-        if not model:
-            yield "Provide the model name.", keep, keep
-            return
-        wt = WorkType(work_type)
-        llm = _llm(base_url, model)
-        stop_flag.clear()
-        prog: dict[str, str] = {"msg": ""}
-
-        def note(m: str) -> None:
-            prog["msg"] = m
-
-        def work() -> Candidates:
-            return _run_phase(
-                store, skills, int(source_id), wt, llm, note, stop_flag.is_set
-            )
-
-        # extraction in a thread → generator refreshes the timer and stage every second
-        box: dict[str, Any] = {}
-
-        def run() -> None:
-            try:
-                box["ok"] = work()
-            except Exception as e:  # noqa: BLE001
-                box["err"] = e
-
-        th = threading.Thread(target=run)
-        th.start()
-        t0 = time.time()
-        while th.is_alive():
-            el = int(time.time() - t0)
-            if stop_flag.is_set():
-                msg = f"⏹ Stopping after the current chunk… ({el} s)"
-            else:
-                detail = f" — {prog['msg']}" if prog["msg"] else ""
-                msg = f"⏳ Extracting facts… {el} s{detail}"
-            yield msg, keep, keep  # only the status ticks; cards stay as they are
-            th.join(timeout=1.0)
-        if "err" in box:
-            yield f"Error: {box['err']}", [], keep
-            return
-        ids = [cid for cid, _ in box["ok"]]
-        yield f"Extracted {len(ids)} facts — tick the ones you keep.", ids, keep
-
-    def on_accept_all(ids, tick):  # type: ignore[no-untyped-def]
-        for cid in ids:
-            set_accepted(store, cid, True)
-        return f"Approved {len(ids)} facts (untick any on its card).", tick + 1
-
-    def on_argue(source_id, base_url, model):  # type: ignore[no-untyped-def]
-        empty = gr.update(choices=[], value=[], visible=False)
-        if not source_id:
-            return empty, [], "First extract and approve facts."
-        try:
-            llm = _llm(base_url, model)
-            args = argue_candidates(store, skills, int(source_id), llm)
-        except Exception as e:  # noqa: BLE001
-            return empty, [], f"Error: {e}"
-        if not args:
-            return empty, [], "No arguments (approve facts first)."
-        choices = [(label, aid) for aid, label in args]
-        ids = [aid for aid, _ in args]
-        msg = f"Built {len(ids)} arguments."
-        return gr.update(choices=choices, value=ids, visible=True), ids, msg
-
-    def on_decide_args(selected, all_ids):  # type: ignore[no-untyped-def]
-        acc, rej = apply_argument_decisions(store, all_ids, selected)
-        return f"Accepted {acc} arguments, rejected {rej}."
-
-    def on_suggest(source_id, base_url, model, tick):  # type: ignore[no-untyped-def]
-        # proposes a query per fact and STOPS — the human reviews/edits before searching
-        keep = gr.skip()
-        if not source_id:
-            yield "First extract and approve facts.", keep
-            return
-        claims = store.claims_for_source(int(source_id), status="accepted")
-        if not claims:
-            yield "No approved facts — tick facts on their cards first.", keep
-            return
-        n = len(claims)
-        stop_flag.clear()
-        yield f"⏳ Proposing queries for {n} facts…", keep
-        try:  # one model call per fact — a batched one overruns the timeout
-            for i, _ in enumerate(
-                iter_suggester(store, _llm(base_url, model), skills, int(source_id)), 1
-            ):
-                yield f"⏳ Proposing queries… {i}/{n}", keep
-                if stop_flag.is_set():
-                    break
-        except Exception as e:  # noqa: BLE001
-            yield f"Error: {e}", tick + 1
-            return
-        yield "Queries proposed — edit them on the cards, then corroborate.", tick + 1
-
-    def on_corroborate(source_id, base_url, model, tick):  # type: ignore[no-untyped-def]
-        keep = gr.skip()  # don't rebuild the cards during progress
-        if not source_id:
-            yield "First extract and approve facts.", keep
-            return
-        claims = store.claims_for_source(int(source_id), status="accepted")
-        if not claims:
-            yield "No approved facts — tick facts on their cards first.", keep
-            return
-        llm = _llm(base_url, model)
-        stop_flag.clear()
-        activity = f"corroborate:{source_id}"
-        src = store.get_source(int(source_id))
-        context = study_context(src)
-        yield "⏳ Asking OpenAlex who cites this work…", keep
-        citing = citations_for(src)  # once per source, reused for every fact
-        if citing:
-            found = "\n".join(f"    📚 {c.title[:70]} — {c.url}" for c in citing)
-            head = f"📚 {len(citing)} citing works (checked before the search engine):"
-            yield f"{head}\n{found}", keep
+    th = threading.Thread(target=run)
+    th.start()
+    t0 = time.time()
+    while th.is_alive():
+        el = int(time.time() - t0)
+        if stop.is_set():
+            yield {"status": f"Stopping after the current chunk · {el}s"}
         else:
-            why = "no DOI" if doi_of(src) is None else "none found"
-            yield f"📚 Citation channel: {why} — searching the web only.", keep
-        targets = [c for c in claims if c.id is not None]
-        # queries come from the cards; none stored → the human skipped the propose
-        # step, so propose them here (one click still works end to end)
-        if not any(store.get_lead(cid) for cid in [c.id for c in targets] if cid):
-            for i, _ in enumerate(
-                iter_suggester(store, llm, skills, int(source_id)), 1
-            ):
-                yield f"⏳ Proposing search queries… {i}/{len(targets)}", keep
-                if stop_flag.is_set():
-                    break
-        lines: list[str] = []
-        for i, claim in enumerate(targets, 1):
-            if stop_flag.is_set():
-                stopped = f"⏹ Stopped ({i - 1}/{len(targets)})."
-                yield "\n".join([*lines, stopped]), tick + 1
-                return
-            lead = store.get_lead(claim.id) if claim.id is not None else None
-            q = lead.query if lead is not None else claim.statement
-            prog = (
-                f"⏳ Checking {i}/{len(targets)}: {claim.statement[:55]}…\n    🔍 {q}"
+            detail = f" · {prog['msg']}" if prog["msg"] else ""
+            yield {"status": f"Extracting facts · {el}s{detail}"}
+        th.join(timeout=1.0)
+    if "err" in box:
+        raise box["err"]
+    yield {"log": f"Extracted {len(box['ok'])} facts — tick the ones you keep."}
+
+
+def suggest_events(
+    store: ProvenanceStore,
+    skills: SkillRegistry,
+    source_id: int,
+    llm: LLMClient,
+    stop: threading.Event,
+) -> Iterator[Event]:
+    """Proposes a query per accepted fact and STOPS — the human edits the queries
+    before searching."""
+    n = len(store.claims_for_source(source_id, status="accepted"))
+    if not n:
+        yield {"log": "No approved facts — tick facts first."}
+        return
+    for i, _ in enumerate(iter_suggester(store, llm, skills, source_id), 1):
+        yield {"status": f"Proposing search queries · {i}/{n}"}
+        if stop.is_set():
+            break
+    yield {"log": "Queries proposed — edit them, then corroborate."}
+
+
+def corroborate_events(
+    store: ProvenanceStore,
+    skills: SkillRegistry,
+    source_id: int,
+    llm: LLMClient,
+    stop: threading.Event,
+) -> Iterator[Event]:
+    targets = [
+        c
+        for c in store.claims_for_source(source_id, status="accepted")
+        if c.id is not None
+    ]
+    if not targets:
+        yield {"log": "No approved facts — tick facts first."}
+        return
+    src = store.get_source(source_id)
+    context = study_context(src)
+    yield {"status": "Asking OpenAlex who cites this work"}
+    citing = citations_for(src, store)  # once per source, reused for every fact
+    if citing:
+        yield {"log": f"{len(citing)} citing works — checked before the search engine"}
+        for c in citing:
+            yield {"log": f"cited by: {c.title[:90]} — {c.url}"}
+    else:
+        why = "no DOI" if doi_of(src) is None else "none found"
+        yield {"log": f"Citation channel: {why} — searching the web only."}
+    # no stored queries → the human skipped the propose step; propose them here so a
+    # single click still works end to end
+    if not any(store.get_lead(c.id) for c in targets if c.id is not None):
+        yield from suggest_events(store, skills, source_id, llm, stop)
+    found = 0
+    for i, claim in enumerate(targets, 1):
+        assert claim.id is not None
+        if stop.is_set():
+            yield {"log": f"Stopped at {i - 1}/{len(targets)}."}
+            return
+        lead = store.get_lead(claim.id)
+        yield {"status": f"Checking {i}/{len(targets)} · {claim.statement[:70]}"}
+        try:
+            eid = corroborate_one(
+                store,
+                llm,
+                claim,
+                query=lead.query if lead is not None else None,
+                context=context,
+                citing=citing,
+                activity=f"corroborate:{source_id}",
+                agent=llm.model,
             )
-            yield "\n".join([*lines, prog]), keep
-            try:
-                eid = corroborate_one(
-                    store,
-                    llm,
-                    claim,
-                    query=lead.query if lead is not None else None,
-                    context=context,
-                    citing=citing,
-                    activity=activity,
-                    agent=llm.model,
-                )
-            except Exception as e:  # noqa: BLE001
-                yield "\n".join([*lines, f"⚠️ error on fact {i}: {e}"]), keep
-                continue
-            if eid is not None:
-                ev = store.get_evidence(eid)
-                src = store.get_source(ev.source_id)
-                lines.append(f"- ✅ **{claim.statement}**")
-                lines.append(f"    „{ev.quote}” — {src.local_identifier}")
-        msg = "\n".join(lines) if lines else "No corroboration found on the web."
-        yield msg, tick + 1  # cards now show the ✅ evidence
-
-    def fact_card(n: int, cid: int) -> None:
-        """One fact, one card: the gate, its verbatim grounds, the editable query and
-        what the web turned up — instead of the same fact spread over three tables."""
-        claim = store.get_claim(cid)
-        src = store.get_source(claim.source_id)
-        evs = store.evidence_for_claim(cid)
-        own = [e for e in evs if e.source_id == claim.source_id]
-        ext = [e for e in evs if e.source_id != claim.source_id]
-        lead = store.get_lead(cid)
-        with gr.Group():
-            gate = gr.Checkbox(
-                value=claim.status == "accepted",
-                label=f"#{n} · {claim.kind} · {claim.statement}",
-                container=False,
-            )
-            if own:
-                gr.Markdown(
-                    "  \n".join(f"„{e.quote}” · {e.start}–{e.end}" for e in own)
-                )
-                with gr.Accordion("Context in source", open=False):
-                    gr.Markdown(
-                        _context_window(src.full_text, own[0].start, own[0].end)
-                    )
-            query = gr.Textbox(
-                value=lead.query if lead is not None else "",
-                label="🔍 Search query (editable; empty = search by the fact's text)",
-                lines=1,
-            )
-            if ext:
-                gr.Markdown("  \n".join(f"✅ {_impact_cell(store, e)}" for e in ext))
-            elif claim.external_trail == "internal":
-                gr.Markdown("*no external trail expected (model's hint)*")
-            # written straight through — no separate "save" button to forget
-            gate.change(lambda v, c=cid: set_accepted(store, c, bool(v)), inputs=gate)
-            query.blur(lambda v, c=cid: save_query(store, c, v), inputs=query)
-
-    def on_stop():  # type: ignore[no-untyped-def]
-        # cooperative stop: extraction finishes the current chunk, corroboration the
-        # current claim (a model call can't be interrupted mid-flight), then halts.
-        stop_flag.set()
-        return "⏹ Stopping…", "⏹ Stopping…"
-
-    with gr.Blocks(title="IMeTo") as ui:
-        gr.Markdown("# IMeTo")
-        gr.Markdown(
-            "Facts grounded in the source → impact corroboration on the web "
-            "→ assessment by Criterion III"
-        )
-
-        source_id = gr.State(None)
-        all_ids = gr.State([])
-        arg_ids = gr.State([])
-        tick = gr.State(0)  # bump = rebuild the fact cards from the store
-
-        with gr.Row():
-            with gr.Column(scale=2):  # controls — every button lives here
-                with gr.Accordion("Model settings", open=False):
-                    base_url = gr.Textbox(
-                        label="Model address", value=settings.llm_base_url
-                    )
-                    model = gr.Textbox(label="Model", value=settings.llm_model)
-
-                gr.Markdown("### Source")
-                mode = gr.Radio(
-                    choices=["File", "DOI", "URL"], value="File", label="Mode"
-                )
-                document = gr.File(label="Document (PDF/DOCX)", type="filepath")
-                work_type = gr.Dropdown(
-                    label="Work type",
-                    choices=[wt.value for wt in WorkType],
-                    value=WorkType.report.value,
-                )
-                doi = gr.Textbox(label="DOI", placeholder="10.1234/...")
-                url = gr.Textbox(label="URL", placeholder="https://...")
-                full_text = gr.Checkbox(label="OA full text", value=False)
-                load_btn = gr.Button("Fetch source", variant="primary")
-                source_preview = gr.Markdown()
-
-                gr.Markdown("### Step 1 · Facts")
-                extract_btn = gr.Button("Extract facts from source", variant="primary")
-                accept_all_btn = gr.Button("Approve all facts")
-                status = gr.Markdown()
-                download_btn = gr.DownloadButton("Download table (CSV)")
-
-                gr.Markdown("### Step 2 · Impact corroboration on the web")
-                suggest_btn = gr.Button("Propose search queries")
-                corroborate_btn = gr.Button("Corroborate facts on the web")
-                lead_status = gr.Markdown()
-                corr_output = gr.Markdown()
-
-                gr.Markdown("### Step 3 · Assessment by Criterion III")
-                argue_btn = gr.Button("Assess by Criterion III", variant="primary")
-
-                stop_btn = gr.Button("Stop")
-
-            with gr.Column(scale=3):  # one card per fact, nothing duplicated
-                gr.Markdown("### Facts")
-
-                @gr.render(inputs=[all_ids, tick])  # type: ignore[untyped-decorator]
-                def render_facts(ids: list[int], _tick: int) -> None:
-                    if not ids:
-                        gr.Markdown("*Fetch a source and extract to see facts here.*")
-                        return
-                    for n, cid in enumerate(ids, 1):
-                        fact_card(n, cid)
-
-                gr.Markdown("### Assessment")
-                arguments = gr.CheckboxGroup(
-                    label="Select to accept", choices=[], visible=False
-                )
-                decide_args_btn = gr.Button("Approve selected arguments")
-                arg_status = gr.Markdown()
-
-        load_btn.click(
-            on_load,
-            [mode, document, doi, url, full_text, work_type, tick],
-            [source_id, source_preview, all_ids, tick],
-        )
-        extract_btn.click(
-            on_extract,
-            [source_id, work_type, base_url, model, tick],
-            [status, all_ids, tick],
-        )
-        accept_all_btn.click(on_accept_all, [all_ids, tick], [status, tick])
-        download_btn.click(lambda ids: facts_csv(store, ids), all_ids, download_btn)
-        ev_argue = argue_btn.click(
-            on_argue, [source_id, base_url, model], [arguments, arg_ids, arg_status]
-        )
-        decide_args_btn.click(on_decide_args, [arguments, arg_ids], [arg_status])
-        ev_suggest = suggest_btn.click(
-            on_suggest, [source_id, base_url, model, tick], [lead_status, tick]
-        )
-        ev_corr = corroborate_btn.click(
-            on_corroborate, [source_id, base_url, model, tick], [corr_output, tick]
-        )
-        # extraction stops cooperatively (thread + flag) — we do NOT cancel its
-        # generator, since only it shows closure. Corroboration/scoring we also cancel.
-        stop_btn.click(
-            on_stop,
-            None,
-            [status, corr_output],
-            cancels=[ev_corr, ev_argue, ev_suggest],
-        )
-    return ui
-
-
-def launch() -> None:
-    build_ui().queue().launch()
-
-
-if __name__ == "__main__":
-    launch()
+        except Exception as e:  # noqa: BLE001 — one failing fact must not end the run
+            yield {"log": f"Error on fact {i}: {e}"}
+            continue
+        if eid is not None:
+            found += 1
+            yield {"log": f"Confirmed: {claim.statement[:90]}"}
+    yield {"log": f"Corroboration done — {found}/{len(targets)} facts confirmed."}

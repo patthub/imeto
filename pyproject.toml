@@ -15,7 +15,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ui = ["gradio>=4.0"]
+# web GUI backend (front: web/, React)
+ui = ["fastapi>=0.115", "uvicorn>=0.30", "python-multipart>=0.0.9"]
 api = ["fastapi>=0.115", "uvicorn>=0.30"]
 mcp = ["mcp>=1.2"]
 # impact-evidence search: DuckDuckGo (no key) + trafilatura (HTML->text)

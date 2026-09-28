@@ -1,0 +1,169 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/outfit";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Look: a Notion page, typeset like Quickflow (Outfit). Warm greys, small radii,
+   no shadows or gradients; colour only where it carries meaning (argument sides,
+   the quote highlighted in its context). */
+
+@theme inline {
+  --font-sans: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-highlight: var(--highlight);
+  --color-tag-gray: var(--tag-gray);
+  --color-tag-gray-foreground: var(--tag-gray-foreground);
+  --color-tag-green: var(--tag-green);
+  --color-tag-green-foreground: var(--tag-green-foreground);
+  --color-tag-red: var(--tag-red);
+  --color-tag-red-foreground: var(--tag-red-foreground);
+  --color-tag-yellow: var(--tag-yellow);
+  --color-tag-yellow-foreground: var(--tag-yellow-foreground);
+  --color-tag-blue: var(--tag-blue);
+  --color-tag-blue-foreground: var(--tag-blue-foreground);
+  --color-attention: var(--attention);
+  --color-selection: var(--selection);
+  --color-selection-line: var(--selection-line);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  --radius: 0.4rem;
+  --background: #ffffff;
+  --foreground: #37352f;
+  --card: #ffffff;
+  --card-foreground: #37352f;
+  --popover: #ffffff;
+  --popover-foreground: #37352f;
+  --primary: #191919;
+  --primary-foreground: #ffffff;
+  --secondary: #f7f7f5;
+  --secondary-foreground: #37352f;
+  --muted: #f1f1ef;
+  --muted-foreground: #787774;
+  --accent: #efefed;
+  --accent-foreground: #37352f;
+  --destructive: #d44c47;
+  --border: #e9e9e7;
+  --input: #e0dfdc;
+  --ring: #a3a29e;
+  --sidebar: #f7f7f5;
+  --sidebar-foreground: #5f5e5b;
+  --sidebar-accent: #ebebea;
+  --sidebar-accent-foreground: #37352f;
+  --sidebar-border: #ececea;
+  --sidebar-primary: #191919;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #a3a29e;
+  --highlight: #fbf0c9;
+  --dot: #dcdbd8;
+  --tag-gray: #e9e8e5;
+  --tag-gray-foreground: #32302c;
+  --tag-green: #dbeddb;
+  --tag-green-foreground: #1c3829;
+  --tag-red: #ffe2dd;
+  --tag-red-foreground: #5d1715;
+  --tag-yellow: #fdecc8;
+  --tag-yellow-foreground: #402c1b;
+  --tag-blue: #d3e5ef;
+  --tag-blue-foreground: #183347;
+  --attention: #b26b12;
+  --selection: rgb(35 131 226 / 0.07);
+  --selection-line: #2383e2;
+}
+
+.dark {
+  --background: #191919;
+  --foreground: #d4d4d3;
+  --card: #202020;
+  --card-foreground: #d4d4d3;
+  --popover: #252525;
+  --popover-foreground: #d4d4d3;
+  --primary: #e8e8e6;
+  --primary-foreground: #191919;
+  --secondary: #202020;
+  --secondary-foreground: #d4d4d3;
+  --muted: #252525;
+  --muted-foreground: #9b9a97;
+  --accent: #2c2c2c;
+  --accent-foreground: #e8e8e6;
+  --destructive: #e5645e;
+  --border: #2f2f2f;
+  --input: #3a3a3a;
+  --ring: #5a5a5a;
+  --sidebar: #202020;
+  --sidebar-foreground: #9b9a97;
+  --sidebar-accent: #2c2c2c;
+  --sidebar-accent-foreground: #e8e8e6;
+  --sidebar-border: #2a2a2a;
+  --sidebar-primary: #e8e8e6;
+  --sidebar-primary-foreground: #191919;
+  --sidebar-ring: #5a5a5a;
+  --highlight: #4a3e1f;
+  --dot: #2e2e2e;
+  --tag-gray: #373737;
+  --tag-gray-foreground: #d4d4d3;
+  --tag-green: #243d30;
+  --tag-green-foreground: #b7dcc3;
+  --tag-red: #4f2a26;
+  --tag-red-foreground: #f2c3bb;
+  --tag-yellow: #4d3b20;
+  --tag-yellow-foreground: #f1d8a3;
+  --tag-blue: #243a55;
+  --tag-blue-foreground: #c9dff5;
+  --attention: #e0a652;
+  --selection: rgb(82 156 236 / 0.12);
+  --selection-line: #529cec;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  ::selection {
+    background: rgb(35 131 226 / 0.25);
+  }
+}
+
+@utility bg-dots {
+  background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+  background-size: 18px 18px;
+}

@@ -19,12 +19,15 @@ ARGUE_SYSTEM = (
     "merely declared; that is a stronger basis for a FOR argument. Relate the facts to "
     "the rubric. Return only JSON:\n"
     '{"arguments": [{"side": "for|against|gap", "statement": "...", '
-    '"based_on": [1, 3]}]}\n'
+    '"based_on": [1, 3], "sphere": "economy"}]}\n'
     "- side: for (facts support meeting the criterion) | against (they undermine it) | "
     "gap (a significant gap, e.g. impact declared without evidence).\n"
     "- statement: the argument in your own words, concisely.\n"
     "- based_on: the numbers of the FACTS the argument rests on. For for/against give "
     "at least one. For gap it may be empty (it indicates a gap).\n"
+    "- sphere: where in the non-academic environment the impact lands — one of "
+    "economy | public_administration | health | culture | environment | security | "
+    "other; null when the facts don't say.\n"
     "- Rely EXCLUSIVELY on the given facts; do not add information beyond them."
 )
 
@@ -87,6 +90,7 @@ class ArgumenterPhase:
                 claim_ids,
                 activity=activity,
                 agent=agent,
+                sphere=arg.sphere,
             )
             produced.append(aid)
             counts[arg.side] += 1

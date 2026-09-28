@@ -70,6 +70,8 @@ def source_from_fetched(
     existing = store.source_by_local_identifier(fetched.local_identifier)
     if existing is not None:
         assert existing.id is not None
+        if fetched.signals:  # re-import refreshes the stale-prone metrics
+            store.set_signals(existing.id, fetched.signals)
         return existing.id, False
     sid = store.add_source(
         Source(
@@ -81,4 +83,6 @@ def source_from_fetched(
             identifiers=fetched.identifiers,
         )
     )
+    if fetched.signals:
+        store.set_signals(sid, fetched.signals)
     return sid, True

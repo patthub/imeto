@@ -30,6 +30,15 @@ Pay attention to the **scoring dimensions** — if a fact allows it, signal them
 - **reach**: international/total, national/broad, regional/partial, local/limited, marginal;
 - **significance**: breakthrough, substantial, limited, negligible.
 
+Also name the **sphere** where the impact lands (the environments Criterion III lists):
+- `economy` — firms, markets, the labour market, financial institutions,
+- `public_administration` — ministries, local government, regulation, public policy, courts,
+- `health` — healthcare, public health, clinical or care practice,
+- `culture` — culture and the arts, heritage, museums, archives, libraries, media,
+- `environment` — environmental protection, climate, spatial planning,
+- `security` — security and defence,
+- `other` — another factor of civilizational development (e.g. education outside the unit, civil society).
+
 ## What speaks AGAINST (is not impact)
 
 Explicit exclusions — these are NOT social impact:

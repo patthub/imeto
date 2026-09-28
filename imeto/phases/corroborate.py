@@ -99,15 +99,26 @@ def corroborate_one(
     )
 
 
-def citations_for(src: Source, max_results: int = 5) -> list[SearchResult]:
-    """Citing works for a source that has a DOI; [] otherwise. One call per source —
-    both the phase and the GUI go through here, so they cast the same net."""
-    doi = doi_of(src)
-    if not doi:
-        return []
-    return citing_works(
-        doi, max_results=max_results, contact_email=settings.contact_email
+def citations_for(
+    src: Source, store: ProvenanceStore | None = None, max_results: int = 5
+) -> list[SearchResult]:
+    """Candidates that demonstrably used this work: first the documents the human
+    PINNED (e.g. from impact leads), then OpenAlex's citing works (DOI only). One call
+    per source — both the phase and the GUI go through here, so they cast the same
+    net."""
+    pinned = (
+        [SearchResult(**c) for c in store.pinned_candidates(src.id)]
+        if store is not None and src.id is not None
+        else []
     )
+    doi = doi_of(src)
+    found = (
+        citing_works(doi, max_results=max_results, contact_email=settings.contact_email)
+        if doi
+        else []
+    )
+    urls = {c.url for c in pinned}
+    return pinned + [c for c in found if c.url not in urls]
 
 
 @dataclass
@@ -131,7 +142,7 @@ class CorroboratePhase:
         context = study_context(src)
         # citation channel: one lookup per source, reused for every fact (impact is a
         # property of the study). No DOI (e.g. an uploaded file) → empty, search only.
-        citing = citations_for(src)
+        citing = citations_for(src, ctx.store)
         activity = f"corroborate:{self.source_id}"
         agent = ctx.llm.model
         produced: list[int] = []  # ids of confirming evidence

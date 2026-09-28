@@ -16,8 +16,9 @@ Invariant (SAD §8.2): a ground (`Evidence`) is created only after span verifica
 by `core.span`. A fact with no verified ground cannot exist."""
 
 from datetime import UTC, datetime
+from typing import cast
 
-from sqlalchemy import JSON, Column, event
+from sqlalchemy import JSON, Column, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Field, Session, SQLModel, create_engine, select
@@ -42,6 +43,16 @@ class Source(SQLModel, table=True):
     full_text: str
     # ponytail: content_hash for import idempotency (§6.4) — add in the ingest
     #           layer once file import becomes real; not needed here.
+
+
+class SourceSignals(SQLModel, table=True):
+    """OpenAlex context of a source — citation count, reach, pinned citing
+    candidates — one row per source. Context, never evidence. Its own table: it goes
+    stale and gets refreshed, independently of the source text."""
+
+    source_id: int = Field(foreign_key="source.id", primary_key=True)
+    data: dict[str, object] = Field(default_factory=dict, sa_column=Column(JSON))
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Evidence(SQLModel, table=True):
@@ -108,6 +119,9 @@ class Argument(SQLModel, table=True):
     criterion: str  # rubric, e.g. "kryterium_iii"
     side: str  # for | against | gap
     statement: str
+    # Criterion III sphere of impact (economy, health, culture…) — the model proposes,
+    # the human may change it; None = not classified
+    sphere: str | None = None
     generated_at_time: datetime = Field(default_factory=lambda: datetime.now(UTC))
     generated_by_activity: str | None = None
     attributed_to_agent: str | None = None
@@ -134,6 +148,27 @@ def _enable_fk(engine: Engine) -> None:
         dbapi_conn.execute("PRAGMA foreign_keys=ON")  # type: ignore[attr-defined]
 
 
+def _add_missing_columns(engine: Engine) -> None:
+    """`create_all` makes new tables but never new columns on existing ones. Adds any
+    missing NULLABLE column with a plain ALTER TABLE ADD COLUMN — the same statement on
+    SQLite and Postgres, so no engine lock-in. ponytail: additive only; renames, type
+    changes and NOT NULL columns wait for Alembic (TDD §3.3)."""
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have and col.nullable:
+                    ddl = col.type.compile(engine.dialect)
+                    conn.execute(
+                        text(
+                            f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'
+                        )
+                    )
+
+
 class ProvenanceStore:
     def __init__(self, db_url: str = "sqlite://") -> None:
         # StaticPool: one connection — fits the single-user profile and keeps the
@@ -143,6 +178,7 @@ class ProvenanceStore:
         )
         _enable_fk(self.engine)
         SQLModel.metadata.create_all(self.engine)
+        _add_missing_columns(self.engine)
 
     # --- sources ---
 
@@ -161,11 +197,50 @@ class ProvenanceStore:
                 raise ValueError(f"unknown source_id={source_id}")
             return src
 
+    def list_sources(self) -> list[Source]:
+        # ponytail: loads full_text too — fine for one operator's library; select
+        #           columns if the sidebar gets slow
+        with Session(self.engine) as s:
+            return list(s.exec(select(Source).order_by(Source.id.desc())))  # type: ignore[union-attr]
+
     def source_by_local_identifier(self, local_identifier: str) -> Source | None:
         with Session(self.engine) as s:
             return s.exec(
                 select(Source).where(Source.local_identifier == local_identifier)
             ).first()
+
+    def set_signals(self, source_id: int, data: dict[str, object]) -> None:
+        """Insert/refresh a source's signals. Merges by key: a metrics refresh keeps
+        the pinned candidates."""
+        with Session(self.engine) as s:
+            row = s.get(SourceSignals, source_id)
+            old = dict(row.data) if row is not None else {}
+            s.merge(
+                SourceSignals(
+                    source_id=source_id,
+                    data={**old, **data},
+                    fetched_at=datetime.now(UTC),
+                )
+            )
+            s.commit()
+
+    def pin_candidate(self, source_id: int, candidate: dict[str, str]) -> None:
+        """Pins a document the human picked as a likely impact trail (e.g. a policy
+        paper citing this work). Corroboration checks pinned candidates FIRST. Still
+        a candidate (Z1): it counts only once a verbatim quote from it is verified."""
+        pinned = self.pinned_candidates(source_id)
+        if all(p.get("url") != candidate["url"] for p in pinned):
+            pinned.append(candidate)
+        self.set_signals(source_id, {"pinned": pinned})
+
+    def pinned_candidates(self, source_id: int) -> list[dict[str, str]]:
+        raw = (self.get_signals(source_id) or {}).get("pinned")
+        return cast(list[dict[str, str]], raw) if isinstance(raw, list) else []
+
+    def get_signals(self, source_id: int) -> dict[str, object] | None:
+        with Session(self.engine) as s:
+            row = s.get(SourceSignals, source_id)
+            return dict(row.data) if row is not None else None
 
     # --- grounds (verbatim anchors) ---
 
@@ -371,6 +446,7 @@ class ProvenanceStore:
         *,
         activity: str | None = None,
         agent: str | None = None,
+        sphere: str | None = None,
     ) -> int:
         """Create an argument linked to the facts it rests on. The fact list may be
         empty only for 'luka' (gap) — the phase enforces that, not the store."""
@@ -380,6 +456,7 @@ class ProvenanceStore:
                 criterion=criterion,
                 side=side,
                 statement=statement,
+                sphere=sphere,
                 generated_by_activity=activity,
                 attributed_to_agent=agent,
             )
@@ -427,6 +504,16 @@ class ProvenanceStore:
             arg.status = status
             arg.approved_by = by
             arg.decided_at = datetime.now(UTC)
+            s.add(arg)
+            s.commit()
+
+    def set_argument_sphere(self, argument_id: int, sphere: str | None) -> None:
+        """The human's correction of the proposed sphere."""
+        with Session(self.engine) as s:
+            arg = s.get(Argument, argument_id)
+            if arg is None:
+                raise ValueError(f"unknown argument_id={argument_id}")
+            arg.sphere = sphere
             s.add(arg)
             s.commit()
 

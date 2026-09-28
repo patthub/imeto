@@ -14,7 +14,6 @@ from imeto.core.schemas import (
 )
 from imeto.registries.skills import SkillRegistry
 from imeto.ui.app import (
-    apply_argument_decisions,
     argue_candidates,
     extract_candidates,
     extract_candidates_from_doi,
@@ -24,6 +23,7 @@ from imeto.ui.app import (
     load_source,
     save_query,
     set_accepted,
+    set_argument_accepted,
 )
 from imeto.worktypes import WorkType
 
@@ -124,9 +124,8 @@ def test_load_source_creates_source_without_extracting(tmp_path: Path):
     # load = fetch/create source + preview, NO extraction (no claims yet)
     doc = _make_docx(tmp_path / "s.docx")
     store = ProvenanceStore()
-    sid, preview = load_source(store, "File", str(doc), "", "", WorkType.report)
+    sid = load_source(store, "File", str(doc), "", "", WorkType.report)
     assert isinstance(sid, int)
-    assert "Loaded source" in preview and "chars" in preview
     assert store.claims_for_source(sid) == []  # nothing extracted on load
 
 
@@ -223,6 +222,5 @@ def test_argue_over_accepted_facts(tmp_path: Path):
     assert len(out) == 1
     assert "[FOR]" in out[0][1]
 
-    acc, rej = apply_argument_decisions(store, [out[0][0]], [out[0][0]])
-    assert (acc, rej) == (1, 0)
+    set_argument_accepted(store, out[0][0], True)
     assert store.get_argument(out[0][0]).status == "accepted"

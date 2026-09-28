@@ -111,3 +111,26 @@ def test_argue_no_accepted_claims_is_not_ok(tmp_path: Path):
     result = ArgumenterPhase(sid, "kryterium_iii").run(ctx)
     assert result.ok is False
     assert "no facts" in result.summary
+
+
+def test_argument_keeps_the_proposed_sphere_and_the_human_can_change_it(
+    tmp_path: Path,
+):
+    store = ProvenanceStore()
+    sid = _two_accepted_claims(store)
+    arg = Argumentation(
+        arguments=[
+            ProposedArgument(
+                side="for", statement="Better care.", based_on=[2], sphere="health"
+            )
+        ]
+    )
+    ctx = PhaseContext(
+        store=store,
+        llm=FakeArgLLM(arg),
+        skills=_criteria_skills(tmp_path),  # type: ignore[arg-type]
+    )
+    (aid,) = ArgumenterPhase(sid).run(ctx).produced
+    assert store.get_argument(aid).sphere == "health"
+    store.set_argument_sphere(aid, "public_administration")
+    assert store.get_argument(aid).sphere == "public_administration"

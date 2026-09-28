@@ -274,9 +274,48 @@ def search(
 
 
 @app.command()
+def profile(
+    name: str = typer.Argument(..., help="Institution/researcher name or OpenAlex id"),
+    author: bool = typer.Option(False, "--author", help="Search researchers"),
+    citing: bool = typer.Option(
+        False, "--citing", help="Also scan who cites us (slow)"
+    ),
+    top: int = typer.Option(30, "--top", "-n", help="Rows per list"),
+) -> None:
+    """Impact leads (SSH, OpenAlex): non-academic partners, reports, citing orgs."""
+    from imeto.tools import signals
+
+    p = settings.openalex_params
+    entity = name
+    if not (name[:1] in "IA" and name[1:].isdigit()):
+        kind = "author" if author else "institution"
+        hits = signals.find_entities(name, kind, params=p)
+        if not hits:
+            raise typer.BadParameter(f"no {kind} matches {name!r}")
+        entity = hits[0]["id"]
+        typer.echo(f"{hits[0]['display_name']} ({entity}) {hits[0]['detail']}")
+
+    def orgs(title: str, rows: list[dict[str, object]]) -> None:
+        typer.echo(f"\n{title} ({len(rows)}):")
+        for r in rows[:top]:
+            typer.echo(
+                f"  {r['works_count']:5}  {r['name']} ({r['type']}, {r['country']})"
+            )
+
+    orgs("Non-academic co-authors", signals.partners(entity, params=p))
+    reports = signals.reports(entity, params=p)
+    typer.echo(f"\nReports ({len(reports)}):")
+    for w in reports[:top]:
+        typer.echo(f"  {w['year']}  {w['title'][:100]}")
+    if citing:
+        c = signals.citing_orgs(entity, params=p)
+        orgs(f"Non-academic citers of {c['cited_works']} cited works", c["orgs"])
+
+
+@app.command()
 def ui() -> None:
-    """Launch the Gradio interface (human gate: accept/reject candidates)."""
-    from imeto.ui.app import launch  # lazy: pull in Gradio only when the UI starts
+    """Launch the web GUI at http://127.0.0.1:8000 (build the front first: web/)."""
+    from imeto.ui.server import launch  # lazy: pull in FastAPI only when the UI starts
 
     launch()
 

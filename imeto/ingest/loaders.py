@@ -8,7 +8,9 @@ full text. Facts may be extracted only from text we actually hold — so for now
 `full_text` is the abstract. Pulling Open Access full text is a separate, later
 step. Formats without a text layer are out of scope."""
 
+import time
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
@@ -40,6 +42,7 @@ class FetchedWork:
     work_type: WorkType | None = None
     is_oa: bool = False
     oa_pdf_url: str | None = None  # OA full text (PDF), if available
+    signals: dict[str, object] = field(default_factory=dict)  # bibliometric context
 
 
 def _abstract_from_index(index: dict[str, list[int]] | None) -> str:
@@ -52,6 +55,10 @@ def _abstract_from_index(index: dict[str, list[int]] | None) -> str:
     return " ".join(word for _, word in positioned)
 
 
+class RateLimited(ValueError):
+    """The API's budget is spent; retrying now won't help."""
+
+
 def _get(
     url: str,
     *,
@@ -62,12 +69,36 @@ def _get(
     own = client is None
     c = client or httpx.Client(timeout=30.0)
     try:
-        resp = c.get(url, params=params, headers=headers)
+        for attempt in range(3):
+            resp = c.get(url, params=params, headers=headers)
+            if resp.status_code != 429 or attempt == 2:
+                break
+            wait = float(resp.headers.get("Retry-After") or 1)
+            # a burst throttle clears in a second; an exhausted DAILY budget says
+            # "retry in 16 hours" — waiting that out would freeze the app
+            if wait > 5:
+                raise RateLimited(
+                    f"OpenAlex daily limit reached — resets in {wait / 3600:.0f} h "
+                    "(or set OPENALEX_API_KEY)"
+                )
+            time.sleep(wait)
         resp.raise_for_status()
         return resp.json()
     finally:
         if own:
             c.close()
+
+
+def work_signals(work: dict[str, Any]) -> dict[str, Any]:
+    """Context from a work record we already fetched (no extra call). Raw citation
+    count and field only — normalized metrics mislead for SSH (see tools.signals)."""
+    topic = work.get("primary_topic") or {}
+    return {
+        "openalex_id": str(work.get("id") or "").rsplit("/", 1)[-1] or None,
+        "cited_by": work.get("cited_by_count"),
+        "topic": topic.get("display_name"),
+        "field": (topic.get("field") or {}).get("display_name"),
+    }
 
 
 def fetch_by_doi(
@@ -101,6 +132,7 @@ def fetch_by_doi(
         work_type=wt,
         is_oa=bool(oa.get("is_oa")),
         oa_pdf_url=pdf_url,
+        signals=work_signals(work),
     )
 
 
